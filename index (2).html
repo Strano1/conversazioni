@@ -1,0 +1,1849 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Conversazioni</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.10/babel.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Lato:wght@300;400;700&family=DM+Mono:wght@400;500&display=swap');
+:root{
+  --bg:#0a0908;--s1:#111009;--s2:#181410;--s3:#201c15;--s4:#2a261c;
+  --br:#332e22;--br2:#443d2c;--br3:#5a5238;
+  --cr:#f0e8d6;--cr2:#d4c8a8;--cr3:#9a8e72;--cr4:#6a6050;
+  --gd:#c8903a;--gd2:#e0ab52;--gd3:#f0c870;
+  --rs:#b84828;--rs2:#d86040;--rs3:#f08060;
+  --gn:#3a6e38;--gn2:#5a9e58;--gn3:#7acc78;
+  --bl:#2a5878;--bl2:#4a88b8;--bl3:#7ab0d8;
+  --pu:#5a3878;--pu2:#8a68b8;--pu3:#b898e8;
+  --tl:#1a5858;--tl2:#2a8888;--tl3:#48b8b8;
+}
+html,body,#root{height:100%;background:var(--bg);}
+body{font-family:'Lato',sans-serif;color:var(--cr);overflow:hidden;}
+/* Setup screen */
+#setup{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px;z-index:9999;}
+.sb{background:var(--s2);border:1px solid var(--br2);border-radius:14px;padding:32px;max-width:400px;width:100%;text-align:center;}
+.sb-logo{font-size:2.5rem;margin-bottom:10px;}
+.sb-title{font-family:'Cormorant Garamond',serif;font-size:1.7rem;color:var(--gd2);margin-bottom:6px;}
+.sb-sub{font-size:.83rem;color:var(--cr4);margin-bottom:22px;line-height:1.6;}
+.sb-inp{width:100%;padding:11px 14px;border:1px solid var(--br2);border-radius:8px;background:var(--s3);color:var(--cr);font-size:.9rem;outline:none;margin-bottom:10px;font-family:'Lato',sans-serif;}
+.sb-inp:focus{border-color:var(--gd);}
+.sb-btn{width:100%;padding:11px;background:var(--gd);color:#0a0908;border:none;border-radius:8px;font-size:.95rem;font-weight:700;cursor:pointer;font-family:'Lato',sans-serif;}
+.sb-btn:hover{background:var(--gd2);}
+.sb-note{font-size:.74rem;color:var(--cr4);margin-top:14px;line-height:1.6;}
+.sb-note a{color:var(--cr3);}
+.sb-err{color:var(--rs3);font-size:.78rem;margin-bottom:8px;}
+</style>
+</head>
+<body>
+
+<div id="setup">
+  <div class="sb">
+    <div class="sb-logo">💬</div>
+    <div class="sb-title">Conversazioni</div>
+    <div class="sb-sub">language learning through conversation<br><br>Enter your free Gemini API key to begin.</div>
+    <div class="sb-err" id="keyErr" style="display:none">Please enter a valid key.</div>
+    <input class="sb-inp" id="keyInp" type="password" placeholder="AIzaSy…" autocomplete="off"/>
+    <button class="sb-btn" onclick="window.submitKey()">Start Learning →</button>
+    <div class="sb-note">
+      Free key: <a href="https://aistudio.google.com" target="_blank">aistudio.google.com</a> → Get API Key<br>
+      No card needed. Your key stays in your browser only.
+    </div>
+  </div>
+</div>
+
+<div id="root"></div>
+
+<script>
+// Key helpers — available globally
+window.getKey = function(){ return localStorage.getItem('cv_key') || ''; };
+
+window.submitKey = function(){
+  var k = document.getElementById('keyInp').value.trim();
+  if(k.length < 10){
+    document.getElementById('keyErr').style.display = 'block';
+    return;
+  }
+  localStorage.setItem('cv_key', k);
+  document.getElementById('setup').style.display = 'none';
+  // mountApp is defined inside the Babel block — wait for it
+  var tries = 0;
+  var interval = setInterval(function(){
+    tries++;
+    if(typeof window.mountApp === 'function'){
+      clearInterval(interval);
+      window.mountApp();
+    }
+    if(tries > 200){ // 10 seconds max
+      clearInterval(interval);
+      document.getElementById('setup').style.display = 'flex';
+      alert('App failed to load. Please refresh the page and try again.');
+    }
+  }, 50);
+};
+
+// On page load — show setup screen always, pre-fill key if saved
+document.addEventListener('DOMContentLoaded', function(){
+  var k = window.getKey();
+  if(k) document.getElementById('keyInp').value = k;
+  // Always show setup screen first — user confirms key then app loads
+  document.getElementById('setup').style.display = 'flex';
+  document.getElementById('keyInp').addEventListener('keydown', function(e){
+    if(e.key === 'Enter') window.submitKey();
+  });
+});
+</script>
+
+<script type="text/babel" data-presets="react">
+const {useState,useRef,useEffect,useCallback,useMemo}=React;
+
+// ─── STORAGE ─────────────────────────────────────────────────────────
+const S={
+  get:(k,d=null)=>{try{const v=localStorage.getItem(k);return v!=null?JSON.parse(v):d;}catch{return d;}},
+  set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch{}},
+};
+
+// ─── GEMINI API ───────────────────────────────────────────────────────
+async function ask(messages, system, maxTokens=1500){
+  const key=window.getKey();
+  if(!key){location.reload();return '';}
+
+  // Build Gemini-format contents (alternating user/model)
+  const raw=messages.map(m=>({
+    role:(m.role==='assistant'||m.role==='model')?'model':'user',
+    parts:[{text:String(m.content||'')}]
+  }));
+  const contents=[];
+  for(const m of raw){
+    if(contents.length&&contents[contents.length-1].role===m.role){
+      contents[contents.length-1].parts[0].text+='\n'+m.parts[0].text;
+    } else {
+      contents.push({role:m.role,parts:[{text:m.parts[0].text}]});
+    }
+  }
+  if(!contents.length||contents[0].role==='model')
+    contents.unshift({role:'user',parts:[{text:'Hello'}]});
+
+  const body={
+    contents,
+    generationConfig:{maxOutputTokens:Math.min(maxTokens,2048),temperature:0.7}
+  };
+  if(system) body.systemInstruction={parts:[{text:system}]};
+
+  const ENDPOINT=`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
+
+  try{
+    const r=await fetch(ENDPOINT,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(body)
+    });
+    const d=await r.json();
+    if(!r.ok){
+      const msg=d?.error?.message||'Unknown error';
+      if(r.status===400||r.status===403){
+        alert('API key problem: '+msg+'\n\nMake sure your key is from aistudio.google.com and has Gemini API enabled.');
+        localStorage.removeItem('cv_key');location.reload();return '';
+      }
+      if(r.status===429) return '⚠ Rate limit — wait a moment and try again.';
+      return '⚠ Error '+r.status+': '+msg;
+    }
+    const text=d?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if(!text){
+      const reason=d?.candidates?.[0]?.finishReason;
+      return reason==='SAFETY'?'⚠ Blocked by safety filter — try rephrasing.':'⚠ Empty response from Gemini.';
+    }
+    return text;
+  }catch(e){
+    // If fetch fails due to CORS (local file), tell user to use GitHub Pages
+    if(e.message.includes('Failed to fetch')||e.message.includes('NetworkError')||e.message.includes('CORS')){
+      return '⚠ CORS error: Please open this app via GitHub Pages, not as a local file. See setup instructions.';
+    }
+    return '⚠ Network error: '+e.message;
+  }
+}
+
+// ─── SRS ──────────────────────────────────────────────────────────────
+function nextSRS(q,reps,interval,ef){
+  if(q<3)return{reps:0,interval:1,ef:Math.max(1.3,ef-0.2)};
+  const nef=Math.max(1.3,ef+(0.1-(5-q)*(0.08+(5-q)*0.02)));
+  const ni=reps===0?1:reps===1?6:Math.round(interval*nef);
+  return{reps:reps+1,interval:ni,ef:nef};
+}
+const isDue=w=>!w.nextReview||new Date()>=new Date(w.nextReview);
+
+// ─── LANGUAGES ────────────────────────────────────────────────────────
+const LANGS={
+  Italian:{flag:'🇮🇹',code:'it-IT',rom:false,
+    grammar:['Passato prossimo vs Imperfetto','Congiuntivo presente','Congiuntivo passato','Condizionale','Pronomi diretti e indiretti','Ci e Ne','Accordo dei participi','Verbi riflessivi','Comparativi e superlativi','Periodo ipotetico','Gerundio','Partitivi','Imperativo','Futuro semplice'],
+    pron:'Double consonants change meaning. Open/closed vowels (è/é). R is always rolled. Focus on sc/gl/gn sounds.',
+    errors:['passato prossimo vs imperfetto','subjunctive triggers','pronoun placement','past participle agreement'],
+    culture:'Lei (formal) vs tu (informal). Standard Italian is based on Florentine Tuscan.',
+  },
+  French:{flag:'🇫🇷',code:'fr-FR',rom:false,
+    grammar:['Passé composé vs Imparfait','Subjonctif présent','Conditionnel','Articles partitifs','Négation','Pronoms relatifs','Accord du participe passé','Adjectifs','Futur simple','Pronoms y et en','Discours indirect','Gérondif','Verbes pronominaux'],
+    pron:'Nasal vowels, silent final consonants, liaison, uvular R, u vs ou.',
+    errors:['liaison','passé composé vs imparfait','subjonctif triggers','gender agreement'],
+    culture:'Vous vs tu is socially important. Differs from Québécois and African French.',
+  },
+  Spanish:{flag:'🇪🇸',code:'es-ES',rom:false,
+    grammar:['Ser vs Estar','Pretérito vs Imperfecto','Subjuntivo','Por vs Para','Verbos reflexivos','Gustar-type verbs','Condicional','Pronombres OD y OI','Futuro','Imperativo','Perífrasis verbales','Gerundio'],
+    pron:'Rolled R, B/V both bilabial, ceceo vs seseo, syllable-timed rhythm.',
+    errors:['ser vs estar','subjunctive triggers','por vs para','pronoun placement'],
+    culture:'Spain differs from Latin America in vosotros, pronunciation, vocabulary.',
+  },
+  German:{flag:'🇩🇪',code:'de-DE',rom:false,
+    grammar:['Der/Die/Das','Nominativ/Akkusativ/Dativ/Genitiv','Adjektivdeklination','Trennbare Verben','Konjunktiv II','Relativsätze','Wechselpräpositionen','Passiv','Modalverben','Perfekt vs Präteritum','Futur I','Infinitiv mit zu','Wortstellung'],
+    pron:'Umlauts ä/ö/ü are phonemic. Ich-Laut vs ach-Laut, final devoicing, uvular R.',
+    errors:['der/die/das','case selection','adjective endings','separable prefixes'],
+    culture:'Sie (formal) vs du. Hochdeutsch is standard.',
+  },
+  'Brazilian Portuguese':{flag:'🇧🇷',code:'pt-BR',rom:false,
+    grammar:['Pretérito perfeito vs Imperfeito','Condicional','Subjuntivo','Futuro do subjuntivo','Infinitivo pessoal','Pronomes','Ser/Estar/Ficar','Ter vs Haver','Diminutivos','Orações relativas','Voz passiva','Gerúndio'],
+    pron:'Nasal vowels ão/ã/em. Tchi/dji sounds before e/i. Fuller vowels than European Portuguese.',
+    errors:['subjunctive future','personal infinitive','pronoun placement','ser/estar/ficar'],
+    culture:'Você is standard. BP is more phonetically regular than European Portuguese.',
+  },
+  Greek:{flag:'🇬🇷',code:'el-GR',rom:true,
+    grammar:['Noun cases (Ον/Γεν/Αιτ/Κλητ)','Grammatical gender','Verb aspects','Present tense','Past simple (Αόριστος)','Imperfect (Παρατατικός)','Subjunctive (να/ας)','Passive voice','Adjective agreement','Future (θα)'],
+    pron:'Phonetically consistent. γ, χ, θ (think), δ (this), ρ (tap). Stress always marked.',
+    errors:['case endings','verb aspect','adjective agreement','genitive forms'],
+    culture:'Modern Greek differs greatly from Ancient Greek. Based on Demotic.',
+  },
+  Latin:{flag:'🏛️',code:null,rom:false,
+    grammar:['1st–2nd Declension','3rd Declension','4th–5th Declension','1st–2nd Conjugation','3rd–4th Conjugation','Ablative uses','Subjunctive mood','Participles','Gerunds & Gerundives','Indirect statement','Relative clauses','Deponent verbs','Conditions'],
+    pron:'Classical: vowel length is phonemic, C always hard, V=W, AE=eye. Ecclesiastical uses Italian-style.',
+    errors:['case for prepositions','sequence of tenses','deponent verbs','gerundive vs gerund'],
+    culture:'Classical Latin differs from Medieval and Church Latin. No articles. Word order flexible.',
+  },
+  Norwegian:{flag:'🇳🇴',code:'nb-NO',rom:false,
+    grammar:['En/Ei/Et gender','Definite/indefinite forms','Adjective agreement','Verb conjugation','Modal verbs','V2 word order','Negation (ikke)','Interrogatives','Reflexive verbs','Subordinate clauses','Passive voice','Comparative/superlative'],
+    pron:'Pitch accent (tone 1 vs 2). Retroflex consonants. Ø, Å, Æ. Silent D in many words.',
+    errors:['gender assignment','definite suffix vs article','V2 word order','negation in subordinate clauses'],
+    culture:'Bokmål (~85%) and Nynorsk are both official. Norwegian dialects vary enormously.',
+  },
+  Korean:{flag:'🇰🇷',code:'ko-KR',rom:true,
+    grammar:['Hangul','SOV structure','Topic 은/는 vs Subject 이/가','Object 을/를','Location 에/에서','Verb endings','Speech levels (해요체/합쇼체)','Honorifics','Connectives -고/-아서/-지만','Negation','Counters','Conditional -면'],
+    pron:'Tense/aspirated/plain consonants. Batchim shifts in connected speech. Vowel harmony.',
+    errors:['topic vs subject particles','speech level consistency','honorific forms','batchim assimilation'],
+    culture:'Speech level is socially critical. Honorifics affect verbs, vocab, even nouns.',
+  },
+  Japanese:{flag:'🇯🇵',code:'ja-JP',rom:true,
+    grammar:['Hiragana & Katakana','Particles は/が/を/に/で/へ/と','Verb groups U/RU/irregular','Masu-form','て-form','Negative forms','い vs な adjectives','Potential form','Conditional forms','Passive & causative','Counters','Keigo'],
+    pron:'Mora-timed. Long vowels and っ distinct. Pitch accent varies by dialect. R is a light flap.',
+    errors:['は vs が','verb group classification','て-form for irregulars','adjective conjugation','keigo level'],
+    culture:'Keigo essential in formal contexts. Three scripts used simultaneously.',
+  },
+  Mandarin:{flag:'🇨🇳',code:'zh-CN',rom:true,
+    grammar:['Pinyin & 4 tones','SVO structure','Measure words 量词','Aspect particles 了/过/着','Topic-comment structure','Negation 不 vs 没','Questions 吗/呢','Resultative complements','把 construction','被 passive','Relative clauses 的','Comparison 比'],
+    pron:'Tones are non-negotiable. Aspirated vs unaspirated consonants are phonemic. Tone sandhi: 3rd+3rd→2nd+3rd.',
+    errors:['tone accuracy','measure words','了 placement','resultative complements','把 structure'],
+    culture:'Pǔtōnghuà is based on Beijing dialect. Simplified characters mainland; Traditional in Taiwan/HK.',
+  },
+  Turkish:{flag:'🇹🇷',code:'tr-TR',rom:false,
+    grammar:['Vowel harmony','Agglutination','SOV structure','Case suffixes (6)','Postpositions','Verb conjugation','Evidentiality -miş','Negation -me/-ma','Question mi','Causative suffix','Relative clauses','Conditionals -se/-sa'],
+    pron:'Vowel harmony governs all suffixes. Undotted ı has no English equivalent. Soft ğ lengthens vowel. C=j, Ç=ch, Ş=sh.',
+    errors:['vowel harmony in suffixes','case selection','SOV order','-miş vs -di'],
+    culture:'Siz (formal) vs sen. Writing reform 1928 replaced Arabic script. Very few irregular verbs.',
+  },
+};
+const LANG_NAMES=Object.keys(LANGS);
+
+// ─── SCENES ───────────────────────────────────────────────────────────
+const SCENES=[
+  {e:'🛒',p:'A bustling market at dawn — vendors arranging colourful produce, noise and smells everywhere.',t:90,w:120},
+  {e:'♟️',p:'Two elderly people playing chess in a quiet park square, pigeons gathered around them.',t:60,w:90},
+  {e:'🍳',p:'A kitchen scene: someone just dropped a large pot. Steam everywhere, food on the floor.',t:60,w:80},
+  {e:'🚇',p:'A packed commuter train at rush hour — tired faces, bags, phones, newspapers.',t:90,w:110},
+  {e:'🎂',p:'A child\'s birthday party in a garden: balloons, a lopsided cake, excited children, overwhelmed parents.',t:90,w:120},
+  {e:'☕',p:'A corner café early morning: one barista, three regulars, rain on the window.',t:60,w:90},
+  {e:'🏥',p:'A hospital waiting room: mixed people, tension in the air, a child playing quietly in the corner.',t:90,w:110},
+  {e:'✈️',p:'Airport departure gate: delayed flight, tired travellers, a family in tearful goodbyes.',t:90,w:120},
+  {e:'🌊',p:'A crowded beach on a hot day — sunbathers, vendors, children building sandcastles.',t:60,w:100},
+  {e:'📚',p:'A busy university library at exam time — stress, coffee cups, whispered arguments.',t:60,w:90},
+  {e:'🌧️',p:'A family stuck indoors on a rainy Sunday — boredom, a board game, a small argument, then laughter.',t:90,w:120},
+  {e:'🚦',p:'A busy city intersection at peak hour: cars, pedestrians, a street vendor, a cyclist weaving through.',t:60,w:90},
+];
+
+// ─── CSS ──────────────────────────────────────────────────────────────
+const CSS=`
+.app{height:100vh;display:flex;flex-direction:column;overflow:hidden;}
+.hdr{background:var(--s1);border-bottom:1px solid var(--br);padding:8px 14px;display:flex;align-items:center;gap:10px;flex-shrink:0;}
+.logo{font-family:'Cormorant Garamond',serif;font-size:1.35rem;font-weight:600;color:var(--gd2);letter-spacing:.05em;}
+.logo-sub{font-size:.65rem;color:var(--cr4);font-style:italic;}
+.hdr-r{margin-left:auto;display:flex;align-items:center;gap:7px;}
+.lang-pill{display:flex;align-items:center;gap:5px;background:var(--s3);border:1px solid var(--br2);border-radius:20px;padding:5px 11px;font-size:.8rem;color:var(--cr2);cursor:pointer;transition:all .15s;}
+.lang-pill:hover{border-color:var(--gd);color:var(--gd2);}
+.badge{font-family:'DM Mono',monospace;font-size:.66rem;padding:3px 7px;border-radius:10px;background:var(--s3);border:1px solid var(--br2);color:var(--cr3);}
+.notif{background:var(--rs);color:#fff;border-radius:10px;font-size:.63rem;padding:1px 5px;margin-left:2px;}
+.tabs{display:flex;overflow-x:auto;background:var(--s1);border-bottom:1px solid var(--br);padding:0 4px;scrollbar-width:none;flex-shrink:0;}
+.tabs::-webkit-scrollbar{display:none;}
+.tb{padding:8px 10px;border:none;background:transparent;color:var(--cr4);font-family:'Lato',sans-serif;font-size:.75rem;cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:4px;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s;}
+.tb.on{color:var(--gd2);border-bottom-color:var(--gd2);}
+.tb:hover{color:var(--cr2);}
+.content{flex:1;overflow-y:auto;}
+.sec{max-width:720px;width:100%;margin:0 auto;padding:14px 13px 90px;display:flex;flex-direction:column;gap:13px;}
+.card{background:var(--s2);border:1px solid var(--br);border-radius:10px;padding:15px;}
+.card2{background:var(--s3);border:1px solid var(--br);border-radius:8px;padding:11px;}
+.card h3{font-family:'Cormorant Garamond',serif;font-size:1.08rem;color:var(--gd2);margin-bottom:9px;font-weight:600;}
+.card h4{font-family:'Cormorant Garamond',serif;font-size:.92rem;color:var(--cr2);margin-bottom:7px;}
+.inp{width:100%;padding:8px 11px;border:1px solid var(--br2);border-radius:8px;font-family:'Lato',sans-serif;font-size:.86rem;background:var(--s3);color:var(--cr);outline:none;resize:vertical;}
+.inp:focus{border-color:var(--gd);}
+.inp::placeholder{color:var(--cr4);}
+select.inp{cursor:pointer;resize:none;}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:7px 14px;border-radius:8px;border:none;font-family:'Lato',sans-serif;font-size:.83rem;font-weight:700;cursor:pointer;transition:all .15s;white-space:nowrap;}
+.btn:disabled{opacity:.4;cursor:not-allowed;}
+.btn-gd{background:var(--gd);color:#0a0908;}.btn-gd:hover:not(:disabled){background:var(--gd2);}
+.btn-gh{background:transparent;border:1px solid var(--br2);color:var(--cr3);}.btn-gh:hover:not(:disabled){border-color:var(--cr2);color:var(--cr);}
+.btn-gn{background:var(--gn);color:var(--cr);}.btn-gn:hover:not(:disabled){background:var(--gn2);}
+.btn-rs{background:var(--rs);color:var(--cr);}.btn-rs:hover:not(:disabled){background:var(--rs2);}
+.btn-bl{background:var(--bl);color:var(--cr);}.btn-bl:hover:not(:disabled){background:var(--bl2);}
+.btn-pu{background:var(--pu);color:var(--cr);}.btn-pu:hover:not(:disabled){background:var(--pu2);}
+.btn-sm{padding:4px 10px;font-size:.76rem;}
+.row{display:flex;gap:7px;flex-wrap:wrap;align-items:center;}
+.col{display:flex;flex-direction:column;gap:8px;}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:9px;}
+.lbl{font-size:.68rem;color:var(--cr4);letter-spacing:.06em;text-transform:uppercase;margin-bottom:3px;}
+.note{font-size:.78rem;color:var(--cr4);font-style:italic;line-height:1.5;}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.2);border-top-color:currentColor;border-radius:50%;animation:sp .6s linear infinite;}
+@keyframes sp{to{transform:rotate(360deg)}}
+.empty{text-align:center;color:var(--cr4);padding:28px 16px;font-style:italic;font-size:.85rem;}
+.chips{display:flex;flex-wrap:wrap;gap:6px;}
+.chip{background:var(--s3);border:1px solid var(--br2);border-radius:20px;padding:4px 11px;font-size:.76rem;color:var(--cr3);cursor:pointer;font-family:'Lato',sans-serif;transition:all .15s;}
+.chip:hover,.chip.on{background:rgba(200,144,58,.15);border-color:var(--gd);color:var(--gd2);}
+.tgl-row{display:flex;gap:5px;flex-wrap:wrap;}
+.tgl{padding:5px 13px;border-radius:20px;border:1px solid var(--br2);font-family:'Lato',sans-serif;font-size:.76rem;font-weight:700;cursor:pointer;background:transparent;color:var(--cr4);transition:all .15s;}
+.tgl.on{background:rgba(200,144,58,.15);border-color:var(--gd);color:var(--gd2);}
+.fb{background:var(--s3);border-left:3px solid var(--gd);border-radius:0 8px 8px 0;padding:12px;font-size:.84rem;color:var(--cr);line-height:1.65;white-space:pre-wrap;}
+.fb.gn{border-left-color:var(--gn2);}
+.fb.bl{border-left-color:var(--bl2);}
+.fb.pu{border-left-color:var(--pu2);}
+.fb.tl{border-left-color:var(--tl2);}
+/* Chat */
+.chat-wrap{display:flex;flex-direction:column;height:calc(100vh - 98px);}
+.chat-msgs{flex:1;overflow-y:auto;padding:13px;display:flex;flex-direction:column;gap:10px;}
+.mwrap{display:flex;flex-direction:column;gap:3px;}
+.msg{display:flex;flex-direction:column;max-width:88%;}
+.msg.u{align-self:flex-end;align-items:flex-end;}
+.msg.a{align-self:flex-start;}
+.mlbl{font-size:.63rem;color:var(--cr4);padding:0 4px;margin-bottom:1px;}
+.bbl{padding:8px 12px;border-radius:14px;font-size:.88rem;line-height:1.58;white-space:pre-wrap;}
+.bbl.u{background:var(--gd);color:#0a0908;border-bottom-right-radius:4px;}
+.bbl.a{background:var(--s3);color:var(--cr);border:1px solid var(--br2);border-bottom-left-radius:4px;}
+.corr{font-size:.76rem;color:var(--gn3);background:rgba(58,110,56,.12);border-left:3px solid var(--gn2);padding:5px 9px;border-radius:0 6px 6px 0;max-width:88%;align-self:flex-end;white-space:pre-wrap;line-height:1.5;}
+.peek-row{display:flex;gap:5px;flex-wrap:wrap;margin-top:3px;}
+.peek-btn{background:var(--s4);border:1px solid var(--br2);border-radius:20px;padding:3px 10px;font-size:.7rem;color:var(--cr3);cursor:pointer;font-family:'Lato',sans-serif;transition:all .15s;}
+.peek-btn:hover{border-color:var(--gd);color:var(--gd2);}
+.peek-panel{background:var(--s3);border:1px solid var(--br2);border-left:3px solid var(--bl2);border-radius:0 7px 7px 0;padding:7px 10px;font-size:.82rem;color:var(--cr2);line-height:1.55;max-width:88%;white-space:pre-wrap;}
+.peek-panel.vo{border-left-color:var(--gd);}
+.save-btn{background:none;border:none;font-size:.66rem;color:var(--gd);cursor:pointer;font-family:'DM Mono',monospace;padding:2px 5px;opacity:.7;}
+.save-btn:hover{opacity:1;}
+.chat-bar{display:flex;gap:7px;padding:9px 13px;border-top:1px solid var(--br);background:var(--s1);align-items:flex-end;flex-shrink:0;}
+.chat-inp{flex:1;padding:8px 11px;border:1px solid var(--br2);border-radius:10px;font-family:'Lato',sans-serif;font-size:.88rem;background:var(--s3);color:var(--cr);outline:none;resize:none;min-height:40px;max-height:110px;line-height:1.5;}
+.chat-inp:focus{border-color:var(--gd);}
+.chat-inp::placeholder{color:var(--cr4);}
+/* Voice */
+.mic-btn{width:72px;height:72px;border-radius:50%;font-size:2rem;cursor:pointer;border:none;display:flex;align-items:center;justify-content:center;background:var(--rs);margin:0 auto;transition:all .2s;}
+.mic-btn.on{animation:rpl 1.2s infinite;box-shadow:0 0 0 0 rgba(184,72,40,.5);}
+@keyframes rpl{0%{box-shadow:0 0 0 0 rgba(184,72,40,.5);}70%{box-shadow:0 0 0 18px rgba(184,72,40,0);}100%{box-shadow:0 0 0 0 rgba(184,72,40,0);}}
+.phrase-box{background:var(--s3);border:1px solid var(--br2);border-left:3px solid var(--gd);border-radius:0 8px 8px 0;padding:11px 15px;font-size:.96rem;color:var(--cr);font-style:italic;line-height:1.6;}
+/* Scene */
+.scene-art{height:140px;background:var(--s3);border-radius:8px 8px 0 0;display:flex;align-items:center;justify-content:center;font-size:4.5rem;}
+.timer-lg{font-family:'Cormorant Garamond',serif;font-size:2.6rem;color:var(--gd2);text-align:center;line-height:1;}
+/* Conversations */
+.cvline{display:flex;gap:9px;margin-bottom:9px;}
+.spk{font-size:.67rem;font-weight:700;color:var(--gd);min-width:58px;padding-top:2px;text-transform:uppercase;letter-spacing:.08em;font-family:'DM Mono',monospace;}
+.spk-tl{font-size:.76rem;color:var(--cr3);font-style:italic;margin-top:2px;cursor:pointer;transition:filter .2s;}
+.spk-tl.blur{filter:blur(4px);}
+.notes-box{background:rgba(58,110,56,.1);border:1px solid rgba(90,158,88,.3);border-radius:8px;padding:13px;margin-top:11px;}
+.note-item{font-size:.81rem;color:var(--cr);padding:6px 9px;border-left:2px solid var(--gn2);margin-bottom:6px;background:rgba(58,110,56,.06);border-radius:0 5px 5px 0;line-height:1.55;}
+/* Grammar */
+.g-chip{padding:8px 12px;background:var(--s3);border:1px solid var(--br2);border-radius:8px;cursor:pointer;font-size:.82rem;color:var(--cr3);transition:all .15s;text-align:left;}
+.g-chip:hover,.g-chip.on{border-color:var(--gd);color:var(--gd2);background:rgba(200,144,58,.08);}
+.g-out{white-space:pre-wrap;font-size:.85rem;line-height:1.7;color:var(--cr);}
+/* Word bank / SRS */
+.wcard{background:var(--s3);border:1px solid var(--br);border-radius:8px;padding:13px;display:flex;flex-direction:column;gap:5px;}
+.w-tgt{font-family:'Cormorant Garamond',serif;font-size:1.45rem;color:var(--cr);}
+.w-def{font-size:.85rem;color:var(--cr2);font-style:italic;}
+.w-ctx{font-size:.76rem;color:var(--cr4);border-left:2px solid var(--br2);padding-left:7px;line-height:1.5;}
+.w-due{font-family:'DM Mono',monospace;font-size:.66rem;color:var(--cr4);}
+.srs-row{display:flex;gap:5px;margin-top:7px;}
+.srs-b{flex:1;padding:7px 4px;border-radius:7px;border:none;font-family:'Lato',sans-serif;font-size:.78rem;font-weight:700;cursor:pointer;transition:all .15s;}
+.srs-again{background:rgba(112,32,24,.35);color:#de6050;}.srs-again:hover{background:rgba(112,32,24,.6);}
+.srs-hard{background:rgba(42,88,120,.35);color:var(--bl3);}.srs-hard:hover{background:rgba(42,88,120,.6);}
+.srs-good{background:rgba(58,110,56,.35);color:var(--gn3);}.srs-good:hover{background:rgba(58,110,56,.6);}
+.srs-easy{background:rgba(200,144,58,.2);color:var(--gd3);}.srs-easy:hover{background:rgba(200,144,58,.4);}
+/* Progress */
+.stat-g{display:grid;grid-template-columns:1fr 1fr;gap:9px;}
+@media(min-width:480px){.stat-g{grid-template-columns:repeat(4,1fr);}}
+.stat-box{background:var(--s3);border:1px solid var(--br);border-radius:8px;padding:13px;text-align:center;}
+.stat-n{font-family:'Cormorant Garamond',serif;font-size:1.9rem;color:var(--gd2);}
+.stat-l{font-size:.7rem;color:var(--cr4);margin-top:2px;}
+.pb-wrap{background:var(--s3);border-radius:20px;height:6px;overflow:hidden;}
+.pb{height:100%;background:linear-gradient(90deg,var(--gd),var(--gd2));border-radius:20px;transition:width .4s;}
+/* Role-play */
+.rp-badge{display:inline-block;background:rgba(200,144,58,.12);border:1px solid rgba(200,144,58,.4);border-radius:20px;padding:3px 10px;font-size:.73rem;color:var(--gd2);}
+.rp-badge.bl{background:rgba(42,88,120,.15);border-color:rgba(74,136,184,.4);color:var(--bl3);}
+/* Verb table */
+.conj-table{width:100%;border-collapse:collapse;font-size:.82rem;margin-top:8px;}
+.conj-table th{background:var(--s4);color:var(--gd2);padding:6px 10px;text-align:left;font-family:'DM Mono',monospace;font-size:.7rem;}
+.conj-table td{padding:6px 10px;border-bottom:1px solid var(--br);color:var(--cr2);}
+.conj-table .tgt{color:var(--cr);font-style:italic;}
+/* Sentence mining */
+.mine-card{background:var(--s3);border:1px solid var(--br);border-radius:8px;padding:13px;margin-bottom:8px;}
+.mine-sent{font-size:.9rem;color:var(--cr);line-height:1.6;margin-bottom:5px;}
+.mine-tl{font-size:.8rem;color:var(--cr4);font-style:italic;cursor:pointer;}
+.mine-note{font-size:.77rem;color:var(--gd2);border-left:2px solid var(--gd);padding-left:7px;margin-top:5px;}
+/* Listening */
+.seg{padding:7px 0;border-bottom:1px solid var(--br);}
+.seg-tl{font-size:.76rem;color:var(--cr4);font-style:italic;margin-top:2px;cursor:pointer;}
+.seg-tl.blur{filter:blur(3px);}
+/* Accountability */
+.ci-item{display:flex;align-items:center;gap:10px;padding:10px 13px;background:var(--s3);border:1px solid var(--br);border-radius:8px;cursor:pointer;transition:all .15s;}
+.ci-item.done{border-color:var(--gn2);background:rgba(58,110,56,.1);}
+.ci-check{width:22px;height:22px;border-radius:50%;border:2px solid var(--br2);display:flex;align-items:center;justify-content:center;font-size:.85rem;flex-shrink:0;}
+.ci-item.done .ci-check{background:var(--gn);border-color:var(--gn);color:#fff;}
+.ci-label{font-size:.86rem;color:var(--cr2);flex:1;}
+.ci-item.done .ci-label{color:var(--gn3);}
+/* Modal */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:300;display:flex;align-items:center;justify-content:center;padding:16px;}
+.modal{background:var(--s2);border:1px solid var(--br2);border-radius:12px;padding:20px;max-width:440px;width:100%;max-height:90vh;overflow-y:auto;}
+.modal h3{font-family:'Cormorant Garamond',serif;font-size:1.25rem;color:var(--gd2);margin-bottom:4px;}
+.lang-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:13px;}
+.lang-opt{display:flex;align-items:center;gap:7px;padding:8px 11px;background:var(--s3);border:1px solid var(--br2);border-radius:8px;cursor:pointer;font-size:.83rem;color:var(--cr3);transition:all .15s;}
+.lang-opt:hover,.lang-opt.on{border-color:var(--gd);color:var(--gd2);background:rgba(200,144,58,.07);}
+::-webkit-scrollbar{width:4px;height:4px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--br2);border-radius:10px;}
+`;
+
+// ─── LANG MODAL ───────────────────────────────────────────────────────
+function LangModal({lang,level,onSave}){
+  const [l,setL]=useState(lang);
+  const [lv,setLv]=useState(level);
+  return(
+    <div className="modal-bg" onClick={e=>e.target===e.currentTarget&&onSave(lang,level)}>
+      <div className="modal">
+        <h3>Language & Level</h3>
+        <p style={{fontSize:'.78rem',color:'var(--cr4)',marginBottom:13}}>All tabs adapt to your choice.</p>
+        <div className="lang-grid">
+          {LANG_NAMES.map(n=><div key={n} className={`lang-opt${l===n?' on':''}`} onClick={()=>setL(n)}><span>{LANGS[n].flag}</span>{n}</div>)}
+        </div>
+        <div className="lbl" style={{marginBottom:7}}>Level</div>
+        <div className="chips" style={{marginBottom:14}}>
+          {['A1','A2','B1','B2','C1','C2'].map(v=><button key={v} className={`chip${lv===v?' on':''}`} onClick={()=>setLv(v)}>{v}</button>)}
+        </div>
+        <button className="btn btn-gd" style={{width:'100%'}} onClick={()=>onSave(l,lv)}>Confirm</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── CHAT TAB ─────────────────────────────────────────────────────────
+function ChatTab({lang,level,onSave,addStat}){
+  const cfg=LANGS[lang];
+  const [msgs,setMsgs]=useState([]);
+  const [inp,setInp]=useState('');
+  const [busy,setBusy]=useState(false);
+  const [shown,setShown]=useState({});
+  const endRef=useRef(null);
+
+  useEffect(()=>{
+    setMsgs([{r:'a',t:`${cfg.flag} Ready to practise ${lang}? Write to me in ${lang} — I'll reply naturally and correct any mistakes below your message. (${level})`,corr:null,tl:null,voc:null}]);
+    setShown({});
+  },[lang,level]);
+
+  useEffect(()=>endRef.current?.scrollIntoView({behavior:'smooth'}),[msgs]);
+
+  function sys(){
+    return `You are a warm ${lang} conversation partner and language tutor. The learner's level is ${level}.
+${cfg.rom?'Always include romanisation in parentheses after '+lang+' text.':''}
+Cultural context: ${cfg.culture}
+
+Reply to the learner's message using EXACTLY this structure — keep all four section headers:
+
+CORRECTION: [In English: explain any grammar or vocabulary errors and give correct forms. If the message is perfect, write exactly: ✓ Perfect!]
+
+REPLY:
+[Your reply in ${lang} only — 2 to 4 natural sentences, end with a follow-up question to keep conversation going]
+
+TRANSLATION:
+[English translation of your REPLY]
+
+VOCAB: [one interesting word or phrase from your reply] = [meaning and usage note in English — omit this entire line if nothing notable]`;
+  }
+
+  async function send(){
+    if(!inp.trim()||busy)return;
+    const txt=inp.trim();setInp('');setBusy(true);
+    setMsgs(m=>[...m,{r:'u',t:txt,corr:null,tl:null,voc:null}]);
+    const hist=msgs
+      .filter(m=>m.t&&m.t.trim())
+      .map(m=>({role:m.r==='a'?'assistant':'user',content:m.t}));
+    hist.push({role:'user',content:txt});
+    const raw=await ask(hist,sys(),1600);
+    const cm=raw.match(/CORRECTION:\s*([\s\S]+?)(?=\n\nREPLY:)/);
+    const rm=raw.match(/REPLY:\s*\n([\s\S]+?)(?=\n\nTRANSLATION:)/);
+    const tlm=raw.match(/TRANSLATION:\s*\n([\s\S]+?)(?=\n\nVOCAB:|$)/s);
+    const vm=raw.match(/VOCAB:\s*(.+?)(?=\n\n|$)/s);
+    const corr=cm?cm[1].trim():null;
+    const reply=rm?rm[1].trim():raw;
+    const tl=tlm?tlm[1].trim():null;
+    const voc=vm?vm[1].trim():null;
+    setMsgs(m=>{
+      const n=[...m,{r:'a',t:reply,corr:null,tl,voc}];
+      if(corr&&!corr.startsWith('✓'))n[n.length-2]={...n[n.length-2],corr};
+      return n;
+    });
+    if(corr&&!corr.startsWith('✓'))addStat('corrections');
+    addStat('chatMsgs');
+    setBusy(false);
+  }
+
+  const tog=(i,k)=>setShown(s=>({...s,[i]:{...s[i],[k]:!s[i]?.[k]}}));
+
+  return(
+    <div className="chat-wrap">
+      <div className="chat-msgs">
+        {msgs.map((m,i)=>(
+          <div key={i} className="mwrap">
+            <div className={`msg ${m.r}`}>
+              <div className="mlbl">{m.r==='u'?'You':'Conversazioni'}</div>
+              <div className={`bbl ${m.r}`}>{m.t}</div>
+            </div>
+            {m.r==='u'&&m.corr&&<div className="corr">{m.corr}</div>}
+            {m.r==='a'&&(m.tl||m.voc)&&(
+              <div className="peek-row">
+                {m.tl&&<button className="peek-btn" onClick={()=>tog(i,'tl')}>{shown[i]?.tl?'▲ Hide':'🌐 Translation'}</button>}
+                {m.voc&&<button className="peek-btn" onClick={()=>tog(i,'voc')}>{shown[i]?.voc?'▲ Hide':'📖 Vocab'}</button>}
+              </div>
+            )}
+            {m.r==='a'&&m.tl&&shown[i]?.tl&&<div className="peek-panel">{m.tl}</div>}
+            {m.r==='a'&&m.voc&&shown[i]?.voc&&(
+              <div className="peek-panel vo">
+                {m.voc}
+                <button className="save-btn" onClick={()=>{const p=m.voc.split('=');onSave({target:p[0]?.trim(),meaning:p[1]?.trim()||'',context:m.t,lang});}}>＋ Save</button>
+              </div>
+            )}
+          </div>
+        ))}
+        {busy&&<div className="msg a"><div className="mlbl">Conversazioni</div><div className="bbl a" style={{color:'var(--cr4)',fontStyle:'italic'}}>typing…</div></div>}
+        <div ref={endRef}/>
+      </div>
+      <div className="chat-bar">
+        <textarea className="chat-inp" value={inp} onChange={e=>setInp(e.target.value)}
+          onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}}}
+          placeholder={`Write in ${lang}… (Enter to send)`} rows={1}/>
+        <button className="btn btn-gd" onClick={send} disabled={busy||!inp.trim()}>{busy?<span className="spin"/>:'Send'}</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── VOICE TAB ────────────────────────────────────────────────────────
+function VoiceTab({lang,level,onSave,addStat}){
+  const cfg=LANGS[lang];
+  const [phrase,setPhrase]=useState('');
+  const [loadingP,setLoadingP]=useState(false);
+  const [rec,setRec]=useState(false);
+  const [transcript,setTranscript]=useState('');
+  const [feedback,setFeedback]=useState(null);
+  const [busy,setBusy]=useState(false);
+  const recRef=useRef(null);
+
+  async function loadPhrase(){
+    setLoadingP(true);setFeedback(null);setTranscript('');
+    const r=await ask(
+      [{role:'user',content:`Write ONE natural ${lang} sentence suitable for a ${level} learner to practise saying aloud. Output only the sentence itself, nothing else.${cfg.rom?' Include romanisation in parentheses after the sentence.':''}`}],
+      `You are a ${lang} language teacher. Output a single practice sentence only.`,300
+    );
+    setPhrase(r.startsWith('⚠')?'Could not load — check your API key and try again.':r.trim());
+    setLoadingP(false);
+  }
+
+  useEffect(()=>{loadPhrase();},[lang,level]);
+
+  function speak(){
+    if(!cfg.code||!window.speechSynthesis||!phrase)return;
+    window.speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(phrase);u.lang=cfg.code;u.rate=0.82;
+    window.speechSynthesis.speak(u);
+  }
+
+  function startRec(){
+    if(!cfg.code){alert(`Speech recognition not supported for ${lang} in this browser. Type your attempt below instead.`);return;}
+    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    if(!SR){alert('Speech recognition requires Chrome. Type your attempt below.');return;}
+    const r=new SR();r.lang=cfg.code;r.interimResults=false;
+    r.onresult=e=>setTranscript(e.results[0][0].transcript);
+    r.onend=()=>setRec(false);r.onerror=()=>setRec(false);
+    recRef.current=r;r.start();setRec(true);setFeedback(null);
+  }
+
+  async function analyse(){
+    setBusy(true);
+    const sys=`You are an expert ${lang} pronunciation coach. Level: ${level}.
+Pronunciation notes for ${lang}: ${cfg.pron}
+${cfg.rom?'Include romanisation for all '+lang+' examples.':''}
+The target phrase was: "${phrase}"
+The learner said: "${transcript||'(unclear)'}"
+Provide:
+1. How accurately they matched the target
+2. Specific sounds to improve (relevant to ${lang})
+3. Intonation and rhythm notes
+4. What they did well
+5. A phonetic pronunciation guide for the target phrase (write it as approximate English sounds)`;
+    const r=await ask([{role:'user',content:'Please analyse my pronunciation attempt.'}],sys,1000);
+    setFeedback(r);addStat('voiceSessions');setBusy(false);
+  }
+
+  return(
+    <div className="sec">
+      <div className="card">
+        <h3>Practice Phrase</h3>
+        <div className="phrase-box" style={{marginBottom:11,minHeight:50,display:'flex',alignItems:'center',justifyContent:'center'}}>
+          {loadingP?<span style={{color:'var(--cr4)',fontStyle:'normal'}}><span className="spin"/> Loading phrase…</span>:phrase||'—'}
+        </div>
+        <div className="row">
+          <button className="btn btn-gh btn-sm" onClick={speak} disabled={!cfg.code||!phrase||loadingP}>🔊 Hear it</button>
+          <button className="btn btn-gh btn-sm" onClick={loadPhrase} disabled={loadingP}>🔀 New phrase</button>
+          {phrase&&<button className="save-btn" style={{marginLeft:'auto'}} onClick={()=>onSave({target:phrase,meaning:'',context:'Voice practice',lang})}>＋ Save</button>}
+        </div>
+        {!cfg.code&&<p className="note" style={{marginTop:7,color:'var(--rs3)'}}>Browser speech recognition not available for {lang} — type your attempt below.</p>}
+      </div>
+      <div className="card">
+        <h3>Record Yourself</h3>
+        <button className={`mic-btn${rec?' on':''}`} onClick={rec?()=>recRef.current?.stop():startRec}>{rec?'⏹':'🎙️'}</button>
+        <p className="note" style={{textAlign:'center',marginTop:7}}>{rec?'Recording… tap to stop':'Tap the mic to record yourself saying the phrase'}</p>
+        <textarea className="inp" style={{marginTop:11,minHeight:52}} value={transcript} onChange={e=>setTranscript(e.target.value)} placeholder="Transcript appears here, or type what you said…"/>
+        <button className="btn btn-gd" style={{marginTop:9}} onClick={analyse} disabled={busy||!transcript.trim()||!phrase}>
+          {busy?<><span className="spin"/> Analysing…</>:'Get Pronunciation Feedback'}
+        </button>
+      </div>
+      {feedback&&<div className="fb gn">{feedback}</div>}
+    </div>
+  );
+}
+
+// ─── ROLE-PLAY TAB ────────────────────────────────────────────────────
+function RolePlayTab({lang,level,addStat}){
+  const cfg=LANGS[lang];
+  const [scenario,setScenario]=useState('');
+  const [myRole,setMyRole]=useState('');
+  const [aiRole,setAiRole]=useState('');
+  const [register,setRegister]=useState('natural for the scenario');
+  const [active,setActive]=useState(false);
+  const [msgs,setMsgs]=useState([]);
+  const [inp,setInp]=useState('');
+  const [busy,setBusy]=useState(false);
+  const [feedback,setFeedback]=useState(null);
+  const endRef=useRef(null);
+
+  const PRESETS=[
+    {s:'Ordering at a restaurant',u:'Customer',a:'Waiter',r:'polite casual'},
+    {s:'Buying train tickets',u:'Traveller',a:'Ticket agent',r:'neutral'},
+    {s:'A job interview',u:'Applicant',a:'Interviewer',r:'formal'},
+    {s:'Asking for directions',u:'Tourist',a:'Local',r:'friendly informal'},
+    {s:'Doctor\'s appointment',u:'Patient',a:'Receptionist',r:'polite'},
+    {s:'Negotiating at a market',u:'Shopper',a:'Vendor',r:'informal'},
+    {s:'Returning a faulty item',u:'Customer',a:'Shop assistant',r:'polite assertive'},
+    {s:'Meeting a new neighbour',u:'New resident',a:'Neighbour',r:'warm informal'},
+  ];
+
+  useEffect(()=>endRef.current?.scrollIntoView({behavior:'smooth'}),[msgs]);
+
+  function getSys(){
+    return `You are playing the role of: ${aiRole}. Scenario: ${scenario}. Language: ${lang}. Level: ${level}. Register: ${register}.
+${cfg.rom?'Include romanisation in parentheses after each '+lang+' response.':''}
+Stay fully in character as ${aiRole}. Reply ONLY in ${lang} (2–3 natural sentences).
+After your reply, on a new line write:
+HINT: [one grammar or vocabulary tip for the learner's last message in English, or "✓ Well expressed!" if it was correct]`;
+  }
+
+  function start(){
+    if(!scenario||!myRole||!aiRole)return;
+    setActive(true);setFeedback(null);setInp('');
+    setMsgs([{r:'a',t:`[Scenario: ${scenario}. You are ${myRole}. I am ${aiRole}. Begin when ready — speak in ${lang}!]`,hint:null}]);
+  }
+
+  async function send(){
+    if(!inp.trim()||busy)return;
+    const txt=inp.trim();setInp('');setBusy(true);
+    setMsgs(m=>[...m,{r:'u',t:txt,hint:null}]);
+    const hist=msgs
+      .filter(m=>m.t&&m.t.trim())
+      .map(m=>({role:m.r==='a'?'assistant':'user',content:m.t}));
+    hist.push({role:'user',content:txt});
+    const raw=await ask(hist,getSys(),1000);
+    const hm=raw.match(/HINT:\s*(.+?)(?=\n|$)/);
+    const hint=hm?hm[1].trim():null;
+    const reply=raw.replace(/\nHINT:.*$/m,'').trim();
+    setMsgs(m=>[...m,{r:'a',t:reply||raw,hint}]);
+    addStat('chatMsgs');setBusy(false);
+  }
+
+  async function finish(){
+    if(msgs.length<3)return;
+    setBusy(true);
+    const tr=msgs.map(m=>`${m.r==='u'?myRole:aiRole}: ${m.t}`).join('\n');
+    const r=await ask(
+      [{role:'user',content:`Role-play transcript:\n${tr}\n\nGive detailed feedback on my ${lang}: grammar patterns, vocabulary, what went well, what to improve, and 3 key phrases for this scenario.`}],
+      `You are a ${lang} language coach. Level: ${level}. Warm, specific, actionable feedback in English.`,1200
+    );
+    setFeedback(r);setBusy(false);
+  }
+
+  if(!active) return(
+    <div className="sec">
+      <div className="card">
+        <h3>Role-Play Setup</h3>
+        <p className="note" style={{marginBottom:11}}>Play your side of the conversation in {lang}. The AI plays the other character and gives you a grammar hint after each turn.</p>
+        <div className="chips" style={{marginBottom:11}}>
+          {PRESETS.map(p=><button key={p.s} className="chip" onClick={()=>{setScenario(p.s);setMyRole(p.u);setAiRole(p.a);setRegister(p.r);}}>{p.s}</button>)}
+        </div>
+        <div className="col" style={{gap:9}}>
+          <div><div className="lbl">Scenario</div><input className="inp" value={scenario} onChange={e=>setScenario(e.target.value)} placeholder="Describe the situation…"/></div>
+          <div className="g2">
+            <div><div className="lbl">Your role</div><input className="inp" value={myRole} onChange={e=>setMyRole(e.target.value)} placeholder="e.g. Customer"/></div>
+            <div><div className="lbl">AI plays</div><input className="inp" value={aiRole} onChange={e=>setAiRole(e.target.value)} placeholder="e.g. Waiter"/></div>
+          </div>
+          <div><div className="lbl">Register / tone</div><input className="inp" value={register} onChange={e=>setRegister(e.target.value)} placeholder="e.g. informal friendly"/></div>
+        </div>
+        <button className="btn btn-gd" style={{marginTop:13}} onClick={start} disabled={!scenario||!myRole||!aiRole}>Start Role-Play</button>
+      </div>
+    </div>
+  );
+
+  return(
+    <div className="chat-wrap">
+      <div style={{padding:'6px 13px',background:'var(--s3)',borderBottom:'1px solid var(--br)',fontSize:'.73rem',color:'var(--cr4)',flexShrink:0,display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+        <span className="rp-badge">You: {myRole}</span>
+        <span className="rp-badge bl">AI: {aiRole}</span>
+        <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{scenario}</span>
+      </div>
+      <div className="chat-msgs">
+        {msgs.map((m,i)=>(
+          <div key={i} className="mwrap">
+            <div className={`msg ${m.r}`}>
+              <div className="mlbl">{m.r==='u'?myRole:aiRole}</div>
+              <div className={`bbl ${m.r}`}>{m.t}</div>
+            </div>
+            {m.hint&&m.r==='a'&&i>0&&<div style={{alignSelf:'flex-start',maxWidth:'87%'}}><div className="card2" style={{marginTop:3,fontSize:'.75rem',color:m.hint.startsWith('✓')?'var(--gn3)':'var(--gd2)'}}>💡 {m.hint}</div></div>}
+          </div>
+        ))}
+        {busy&&<div className="msg a"><div className="bbl a" style={{color:'var(--cr4)',fontStyle:'italic'}}>…</div></div>}
+        <div ref={endRef}/>
+      </div>
+      {feedback&&<div className="fb bl" style={{margin:'0 13px 13px'}}>{feedback}</div>}
+      <div className="chat-bar">
+        <textarea className="chat-inp" value={inp} onChange={e=>setInp(e.target.value)}
+          onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}}}
+          placeholder={`Reply as ${myRole} in ${lang}…`} rows={1}/>
+        <button className="btn btn-gh btn-sm" onClick={()=>{setActive(false);setMsgs([]);setFeedback(null);}}>↩ Reset</button>
+        <button className="btn btn-gh btn-sm" onClick={finish} disabled={busy||msgs.length<3}>Finish</button>
+        <button className="btn btn-gd" onClick={send} disabled={busy||!inp.trim()}>Send</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── SCENE TAB ────────────────────────────────────────────────────────
+function SceneTab({lang,level,addStat}){
+  const cfg=LANGS[lang];
+  const [scene,setScene]=useState(SCENES[0]);
+  const [mode,setMode]=useState('text');
+  const [inp,setInp]=useState('');
+  const [transcript,setTranscript]=useState('');
+  const [recOn,setRecOn]=useState(false);
+  const [feedback,setFeedback]=useState(null);
+  const [busy,setBusy]=useState(false);
+  const [timer,setTimer]=useState(SCENES[0].t);
+  const [timerOn,setTimerOn]=useState(false);
+  const tiRef=useRef(null);const recRef=useRef(null);
+
+  function newScene(){
+    const s=SCENES[Math.floor(Math.random()*SCENES.length)];
+    setScene(s);setFeedback(null);setInp('');setTranscript('');setTimer(s.t);setTimerOn(false);
+    clearInterval(tiRef.current);
+  }
+
+  useEffect(()=>{
+    if(timerOn&&timer>0){
+      tiRef.current=setInterval(()=>setTimer(t=>{if(t<=1){clearInterval(tiRef.current);setTimerOn(false);return 0;}return t-1;}),1000);
+    }
+    return()=>clearInterval(tiRef.current);
+  },[timerOn]);
+
+  function startRec(){
+    if(!cfg.code){alert('Speech recognition unavailable for '+lang+'. Use text mode.');return;}
+    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    if(!SR){alert('Chrome required for voice.');return;}
+    const r=new SR();r.lang=cfg.code;r.continuous=true;r.interimResults=false;
+    let pts=[];
+    r.onresult=e=>pts.push(e.results[e.results.length-1][0].transcript);
+    r.onend=()=>{setRecOn(false);setTranscript(pts.join(' '));};
+    recRef.current=r;r.start();setRecOn(true);setTimer(scene.t);setTimerOn(true);
+  }
+
+  async function submit(){
+    const txt=mode==='voice'?transcript:inp;
+    if(!txt.trim())return;
+    setBusy(true);
+    const sys=`You are a ${lang} language tutor. Level: ${level}.${cfg.rom?' Include romanisation where helpful.':''}
+Scene shown to student: "${scene.p}"
+They described it in ${lang}. Evaluate their description:
+1. Grammar and vocabulary corrections with correct forms
+2. What they expressed well
+3. Key vocabulary they could have used (${lang} + translation)
+4. A model description at ${level} level
+5. One focused tip for next time`;
+    const r=await ask([{role:'user',content:`My description: "${txt}"`}],sys,1200);
+    setFeedback(r);addStat('scenesCompleted');setBusy(false);
+  }
+
+  const mins=Math.floor(timer/60),secs=timer%60;
+  const timeStr=mins>0?`${mins}:${String(secs).padStart(2,'0')}`:`${timer}s`;
+
+  return(
+    <div className="sec">
+      <div className="card" style={{padding:0,overflow:'hidden'}}>
+        <div className="scene-art"><span>{scene.e}</span></div>
+        <div style={{padding:'12px 15px'}}>
+          <p style={{color:'var(--cr)',fontSize:'.88rem',lineHeight:1.58,marginBottom:9}}>{scene.p}</p>
+          <div className="row" style={{fontSize:'.74rem',color:'var(--cr4)'}}>
+            <span>⏱ {scene.t}s</span><span>✍️ ~{scene.w} words</span><span>🌐 in {lang}</span>
+          </div>
+        </div>
+      </div>
+      <div className="tgl-row">
+        <button className={`tgl${mode==='text'?' on':''}`} onClick={()=>setMode('text')}>✍️ Text</button>
+        <button className={`tgl${mode==='voice'?' on':''}`} onClick={()=>setMode('voice')}>🎙️ Voice</button>
+      </div>
+      {mode==='text'?(
+        <div className="col">
+          <div className="row">
+            <div className="timer-lg">{timeStr}</div>
+            {!timerOn&&<button className="btn btn-gh btn-sm" onClick={()=>{setTimer(scene.t);setTimerOn(true);}}>▶ Start timer</button>}
+          </div>
+          <textarea className="inp" value={inp} onChange={e=>setInp(e.target.value)} style={{minHeight:100}} placeholder={`Describe the scene in ${lang}…`}/>
+        </div>
+      ):(
+        <div style={{textAlign:'center'}}>
+          <div className="timer-lg">{timeStr}</div>
+          <button className={`mic-btn${recOn?' on':''}`} onClick={recOn?()=>{recRef.current?.stop();clearInterval(tiRef.current);setTimerOn(false);}:startRec}>{recOn?'⏹':'🎙️'}</button>
+          <p className="note" style={{marginTop:7}}>{recOn?'Recording… tap to stop':'Tap to record'}</p>
+          {transcript&&<div className="fb" style={{marginTop:11,textAlign:'left',fontStyle:'italic'}}>{transcript}</div>}
+        </div>
+      )}
+      <div className="row">
+        <button className="btn btn-gd" onClick={submit} disabled={busy||(mode==='text'?!inp.trim():!transcript.trim())}>
+          {busy?<><span className="spin"/> Checking…</>:'Get Feedback'}
+        </button>
+        <button className="btn btn-gh" onClick={newScene}>New Scene</button>
+      </div>
+      {feedback&&<div className="fb gn">{feedback}</div>}
+    </div>
+  );
+}
+
+// ─── CONVERSATIONS TAB ────────────────────────────────────────────────
+function ConvoTab({lang,level,saved,setSaved}){
+  const cfg=LANGS[lang];
+  const [topic,setTopic]=useState('');
+  const [speakers,setSpeakers]=useState('2');
+  const [register,setRegister]=useState('informal');
+  const [len,setLen]=useState('medium');
+  const [showNotes,setShowNotes]=useState(true);
+  const [showTl,setShowTl]=useState(true);
+  const [blurred,setBlurred]=useState({});
+  const [convo,setConvo]=useState(null);
+  const [busy,setBusy]=useState(false);
+  const [clarQ,setClarQ]=useState(null);
+  const [clarA,setClarA]=useState('');
+  const [viewing,setViewing]=useState(null);
+
+  const EX=['a stressful work day','wife tells husband about her day; kitchen; informal','boss & employee in café; semi-formal','two friends catching up after months apart','phone call between siblings about family event','ordering food at a restaurant'];
+
+  function getSys(){
+    return `You are a ${lang} conversation writer and language teacher. Level: ${level}.
+${cfg.rom?'Include romanisation in parentheses after each '+lang+' line.':''}
+Output ONLY valid JSON with no markdown or extra text:
+{"title":"","setting":"","lines":[{"speaker":"Name","text":"${lang} dialogue","translation":"English"}],"notes":[{"phrase":"grammar point","explanation":"explanation with alternatives"}],"needsClarification":null}
+Length: ${len==='short'?'6–8':len==='long'?'16–20':'10–14'} lines. Register: ${register}.
+Make dialogue natural with contractions and fillers. Notes should cover grammar specifics for ${lang}.
+If the topic genuinely needs more context, set needsClarification to a question; otherwise null.`;
+  }
+
+  async function gen(extra=''){
+    setBusy(true);setClarQ(null);setConvo(null);setBlurred({});
+    const p=`Topic: ${topic}${extra?'\nContext: '+extra:''}\nSpeakers: ${speakers}\nLanguage: ${lang}`;
+    const raw=await ask([{role:'user',content:p}],getSys(),2000);
+    try{
+      const parsed=JSON.parse(raw.replace(/```json|```/g,'').trim());
+      if(parsed.needsClarification)setClarQ(parsed.needsClarification);
+      else{setConvo(parsed);setSaved(s=>[{...parsed,id:Date.now(),lang,date:new Date().toLocaleDateString()},...s.slice(0,29)]);}
+    }catch{setConvo({title:'Conversation',setting:'',lines:[{speaker:'Note',text:raw,translation:''}],notes:[]});}
+    setBusy(false);
+  }
+
+  if(viewing){
+    const c=saved.find(s=>s.id===viewing);
+    if(!c){setViewing(null);return null;}
+    return(
+      <div className="sec">
+        <div className="row"><button className="btn btn-gh btn-sm" onClick={()=>setViewing(null)}>← Back</button><span style={{color:'var(--cr4)',fontSize:'.76rem'}}>{c.lang} · {c.date}</span></div>
+        <CvDisplay c={c} blurred={blurred} setBlurred={setBlurred} showNotes={showNotes} showTl={showTl}/>
+      </div>
+    );
+  }
+
+  return(
+    <div className="sec">
+      <div className="card">
+        <h3>Build a Conversation</h3>
+        <div className="chips" style={{marginBottom:9}}>{EX.map(e=><button key={e} className="chip" onClick={()=>setTopic(e)}>{e}</button>)}</div>
+        <textarea className="inp" value={topic} onChange={e=>setTopic(e.target.value)} style={{minHeight:66}} placeholder={`Scenario, setting, characters, tone, specific ${lang} elements to practise…`}/>
+        <div className="g2" style={{marginTop:9}}>
+          {[['Speakers',[['2','2 speakers'],['3','3 speakers']],speakers,setSpeakers],
+            ['Register',[['informal','Informal'],['semi-formal','Semi-formal'],['formal','Formal']],register,setRegister],
+            ['Length',[['short','Short'],['medium','Medium'],['long','Long']],len,setLen]
+          ].map(([label,opts,val,set])=>(
+            <div key={label} className="col" style={{gap:3}}>
+              <div className="lbl">{label}</div>
+              <select className="inp" value={val} onChange={e=>set(e.target.value)}>{opts.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select>
+            </div>
+          ))}
+          <div className="col" style={{gap:3}}>
+            <div className="lbl">Show</div>
+            <div className="row" style={{gap:5}}>
+              <button className={`tgl${showNotes?' on':''}`} onClick={()=>setShowNotes(n=>!n)}>Notes</button>
+              <button className={`tgl${showTl?' on':''}`} onClick={()=>setShowTl(t=>!t)}>Translations</button>
+            </div>
+          </div>
+        </div>
+        <button className="btn btn-gd" style={{marginTop:11}} onClick={()=>gen()} disabled={busy||!topic.trim()}>
+          {busy?<><span className="spin"/> Generating…</>:'Generate'}
+        </button>
+      </div>
+      {clarQ&&(
+        <div className="card">
+          <h4>One quick question</h4>
+          <p className="note" style={{marginBottom:9}}>{clarQ}</p>
+          <textarea className="inp" value={clarA} onChange={e=>setClarA(e.target.value)} style={{minHeight:56}} placeholder="Your answer…"/>
+          <button className="btn btn-gd" style={{marginTop:7}} onClick={()=>gen(clarA)} disabled={busy}>Continue</button>
+        </div>
+      )}
+      {convo&&<CvDisplay c={convo} blurred={blurred} setBlurred={setBlurred} showNotes={showNotes} showTl={showTl}/>}
+      {saved.length>0&&(
+        <div className="card">
+          <h3>Saved Conversations</h3>
+          <div className="col" style={{gap:5}}>
+            {saved.slice(0,12).map(c=>(
+              <div key={c.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 11px',background:'var(--s3)',borderRadius:7,cursor:'pointer',border:'1px solid var(--br)'}} onClick={()=>setViewing(c.id)}>
+                <div><div style={{fontSize:'.86rem',color:'var(--cr)'}}>{c.title}</div><div style={{fontSize:'.69rem',color:'var(--cr4)'}}>{c.lang} · {c.date}</div></div>
+                <span style={{color:'var(--gd)'}}>→</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CvDisplay({c,blurred,setBlurred,showNotes,showTl}){
+  return(
+    <div className="card">
+      <h3>{c.title}</h3>
+      {c.setting&&<p className="note" style={{marginBottom:13}}>📍 {c.setting}</p>}
+      {c.lines?.map((l,i)=>(
+        <div key={i} className="cvline">
+          <div className="spk">{l.speaker}</div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:'.88rem',color:'var(--cr)',lineHeight:1.58}}>{l.text}</div>
+            {showTl&&l.translation&&<div className={`spk-tl${blurred[i]?' blur':''}`} onClick={()=>setBlurred(b=>({...b,[i]:!b[i]}))}>{blurred[i]?'▪ ▪ ▪':l.translation}</div>}
+          </div>
+        </div>
+      ))}
+      {showNotes&&c.notes?.length>0&&(
+        <div className="notes-box">
+          <h4 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:'.92rem',color:'var(--gn3)',marginBottom:9}}>📝 Language Notes</h4>
+          {c.notes.map((n,i)=><div key={i} className="note-item"><strong>{n.phrase}</strong> — {n.explanation}</div>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── GRAMMAR TAB ──────────────────────────────────────────────────────
+function GrammarTab({lang,level,addStat}){
+  const cfg=LANGS[lang];
+  const [topic,setTopic]=useState('');
+  const [custom,setCustom]=useState('');
+  const [output,setOutput]=useState('');
+  const [busy,setBusy]=useState(false);
+  const [hist,setHist]=useState([]);
+  const [fu,setFu]=useState('');
+
+  function getSys(){
+    return `You are an expert ${lang} grammar teacher. Level: ${level}.
+${cfg.rom?'Include romanisation for all '+lang+' examples.':''}
+Common learner errors: ${cfg.errors.join(', ')}.
+Explain the grammar topic clearly. Include:
+1. Core rule in plain language
+2. When to use it / when NOT to use it
+3. 4–5 graded examples: ${lang} + English translation${cfg.rom?' + romanisation':''}
+4. Common mistakes and how to avoid them
+5. Comparison with similar structures if relevant
+6. Mini exercise: 3 items with answers below a separator line`;
+  }
+
+  async function explain(t){
+    setBusy(true);setOutput('');setHist([]);
+    const r=await ask([{role:'user',content:`Explain "${t}" in ${lang} to a ${level} learner.`}],getSys(),1600);
+    setOutput(r);setHist([{role:'user',content:t},{role:'assistant',content:r}]);
+    addStat('grammarTopics');setBusy(false);
+  }
+
+  async function followAsk(){
+    if(!fu.trim())return;
+    setBusy(true);
+    const h=[...hist,{role:'user',content:fu}];
+    const r=await ask(h,getSys(),1200);
+    setHist([...h,{role:'assistant',content:r}]);
+    setOutput(r);setFu('');setBusy(false);
+  }
+
+  return(
+    <div className="sec">
+      <div className="card">
+        <h3>Grammar — {lang}</h3>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
+          {cfg.grammar.map(t=><button key={t} className={`g-chip${topic===t?' on':''}`} onClick={()=>{setTopic(t);explain(t);}}>{t}</button>)}
+        </div>
+        <div className="row" style={{marginTop:11}}>
+          <input className="inp" style={{flex:1}} value={custom} onChange={e=>setCustom(e.target.value)}
+            onKeyDown={e=>{if(e.key==='Enter'&&custom.trim()){setTopic(custom);explain(custom);}}}
+            placeholder="Or type any grammar topic…"/>
+          <button className="btn btn-gd btn-sm" onClick={()=>{if(custom.trim()){setTopic(custom);explain(custom);}}} disabled={busy}>Go</button>
+        </div>
+      </div>
+      {busy&&<div className="card" style={{textAlign:'center',color:'var(--cr4)',fontStyle:'italic'}}><span className="spin"/> &nbsp;Preparing explanation…</div>}
+      {output&&!busy&&(
+        <div className="card">
+          <h3>{topic}</h3>
+          <div className="g-out">{output}</div>
+          <hr style={{border:'none',borderTop:'1px solid var(--br)',margin:'12px 0'}}/>
+          <div className="row">
+            <input className="inp" style={{flex:1}} value={fu} onChange={e=>setFu(e.target.value)}
+              onKeyDown={e=>{if(e.key==='Enter')followAsk();}}
+              placeholder="Ask a follow-up question about this topic…"/>
+            <button className="btn btn-gd btn-sm" onClick={followAsk} disabled={busy||!fu.trim()}>Ask</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── WORD BANK + SRS ──────────────────────────────────────────────────
+function WordBankTab({lang,bank,setBank}){
+  const [view,setView]=useState('bank');
+  const [form,setForm]=useState({target:'',meaning:'',context:''});
+  const [ridx,setRidx]=useState(0);
+  const [showA,setShowA]=useState(false);
+
+  const forLang=bank.filter(w=>w.lang===lang);
+  const due=useMemo(()=>forLang.filter(isDue),[bank,lang]);
+
+  useEffect(()=>{setRidx(0);setShowA(false);},[due.length,lang]);
+
+  function addWord(){
+    if(!form.target.trim())return;
+    setBank(b=>[{id:Date.now(),lang,target:form.target.trim(),meaning:form.meaning.trim(),context:form.context.trim(),reps:0,interval:1,ef:2.5,nextReview:null},...b]);
+    setForm({target:'',meaning:'',context:''});
+  }
+
+  function rate(q){
+    const card=due[ridx];if(!card)return;
+    const nxt=nextSRS(q,card.reps||0,card.interval||1,card.ef||2.5);
+    const nd=new Date();nd.setDate(nd.getDate()+nxt.interval);
+    setBank(b=>b.map(w=>w.id===card.id?{...w,...nxt,nextReview:nd.toISOString()}:w));
+    if(ridx<due.length-1){setRidx(i=>i+1);setShowA(false);}
+    else{setRidx(0);setShowA(false);setView('bank');}
+  }
+
+  const cur=due[ridx];
+
+  return(
+    <div className="sec">
+      <div className="tgl-row">
+        <button className={`tgl${view==='bank'?' on':''}`} onClick={()=>setView('bank')}>📚 Bank ({forLang.length})</button>
+        <button className={`tgl${view==='review'?' on':''}`} onClick={()=>{setView('review');setRidx(0);setShowA(false);}}>
+          🔁 Review {due.length>0?`(${due.length} due)`:'(none due)'}
+        </button>
+        <button className={`tgl${view==='add'?' on':''}`} onClick={()=>setView('add')}>＋ Add</button>
+      </div>
+
+      {view==='add'&&(
+        <div className="card">
+          <h3>Add a Word or Phrase</h3>
+          <div className="col">
+            <div><div className="lbl">Word / phrase in {lang}</div><input className="inp" value={form.target} onChange={e=>setForm(f=>({...f,target:e.target.value}))} placeholder="e.g. andare"/></div>
+            <div><div className="lbl">Meaning</div><input className="inp" value={form.meaning} onChange={e=>setForm(f=>({...f,meaning:e.target.value}))} placeholder="e.g. to go"/></div>
+            <div><div className="lbl">Example sentence (optional)</div><input className="inp" value={form.context} onChange={e=>setForm(f=>({...f,context:e.target.value}))} placeholder="A sentence using this word…"/></div>
+            <button className="btn btn-gd" onClick={addWord} disabled={!form.target.trim()}>Add to Bank</button>
+          </div>
+        </div>
+      )}
+
+      {view==='review'&&(
+        due.length===0?<div className="empty">🎉 Nothing due right now. Come back later!</div>:
+        cur&&(
+          <div className="card">
+            <div style={{display:'flex',justifyContent:'space-between',marginBottom:13}}>
+              <h3>Review ({ridx+1} / {due.length})</h3>
+            </div>
+            <div className="wcard">
+              <div className="w-tgt">{cur.target}</div>
+              {cur.context&&<div className="w-ctx">{cur.context}</div>}
+              {!showA?<button className="btn btn-gh" style={{marginTop:9,alignSelf:'flex-start'}} onClick={()=>setShowA(true)}>Reveal answer</button>:(
+                <>
+                  <div className="w-def" style={{marginTop:7}}>{cur.meaning||'(no translation saved)'}</div>
+                  <div className="srs-row">
+                    <button className="srs-b srs-again" onClick={()=>rate(1)}>Again</button>
+                    <button className="srs-b srs-hard" onClick={()=>rate(3)}>Hard</button>
+                    <button className="srs-b srs-good" onClick={()=>rate(4)}>Good</button>
+                    <button className="srs-b srs-easy" onClick={()=>rate(5)}>Easy</button>
+                  </div>
+                  <div style={{fontSize:'.68rem',color:'var(--cr4)',marginTop:5}}>Again=tomorrow · Hard={Math.max(1,Math.round((cur.interval||1)*.5))}d · Good={cur.interval||1}d · Easy={Math.round((cur.interval||1)*(cur.ef||2.5))}d</div>
+                </>
+              )}
+            </div>
+          </div>
+        )
+      )}
+
+      {view==='bank'&&(
+        forLang.length===0?<div className="empty">No words saved for {lang} yet. Words saved from Chat, Voice, or added manually appear here.</div>:(
+          <div className="col">
+            {forLang.map(w=>(
+              <div key={w.id} className="wcard">
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+                  <div className="w-tgt">{w.target}</div>
+                  <button className="btn btn-gh btn-sm" style={{color:'var(--rs2)',borderColor:'var(--rs2)',padding:'2px 7px',fontSize:'.68rem'}} onClick={()=>setBank(b=>b.filter(x=>x.id!==w.id))}>✕</button>
+                </div>
+                {w.meaning&&<div className="w-def">{w.meaning}</div>}
+                {w.context&&<div className="w-ctx">{w.context}</div>}
+                <div className="w-due">Next review: {w.nextReview?new Date(w.nextReview).toLocaleDateString():'today'} · Reps: {w.reps||0}</div>
+              </div>
+            ))}
+          </div>
+        )
+      )}
+    </div>
+  );
+}
+
+// ─── VERB TAB ─────────────────────────────────────────────────────────
+function VerbTab({lang,level,onSave}){
+  const cfg=LANGS[lang];
+  const TENSES={
+    Italian:['Presente','Passato Prossimo','Imperfetto','Futuro Semplice','Condizionale','Congiuntivo Presente','Imperativo'],
+    French:['Présent','Passé Composé','Imparfait','Futur Simple','Conditionnel','Subjonctif','Impératif'],
+    Spanish:['Presente','Pretérito Indefinido','Imperfecto','Futuro','Condicional','Subjuntivo','Imperativo'],
+    German:['Präsens','Perfekt','Präteritum','Futur I','Konjunktiv II','Imperativ'],
+    'Brazilian Portuguese':['Presente','Pretérito Perfeito','Pretérito Imperfeito','Futuro','Condicional','Subjuntivo Presente','Imperativo'],
+    Greek:['Present','Past Simple (Αόριστος)','Imperfect','Future (θα)','Subjunctive (να)','Imperative'],
+    Latin:['Present','Imperfect','Future','Perfect','Pluperfect','Subjunctive Present','Subjunctive Imperfect'],
+    Norwegian:['Present','Past (Preteritum)','Present Perfect','Future','Conditional','Imperative'],
+    Korean:['Present (해요체)','Past (했어요)','Future (할 거예요)','Informal (해)','Formal (합니다)','Negative'],
+    Japanese:['ます-form present','ます-form past','Plain present','Plain past','て-form','Negative','Potential','Conditional -たら'],
+    Mandarin:['Basic present','Completed (了)','Ongoing (着)','Experienced (过)','Negation (不/没)','Potential complement'],
+    Turkish:['Geniş zaman','Şimdiki zaman','Geçmiş zaman (-di)','Gelecek zaman (-ecek)','Dilek-koşul (-se)','Emir'],
+  };
+  const tenses=TENSES[lang]||TENSES.Italian;
+  const [verb,setVerb]=useState('');
+  const [tense,setTense]=useState(tenses[0]);
+  const [output,setOutput]=useState(null);
+  const [sentences,setSentences]=useState([]);
+  const [busy,setBusy]=useState(false);
+  const [busySent,setBusySent]=useState(false);
+  const [showTl,setShowTl]=useState({});
+
+  async function conjugate(){
+    if(!verb.trim())return;
+    setBusy(true);setOutput(null);setSentences([]);
+    const sys=`You are a ${lang} grammar expert.${cfg.rom?' Include romanisation in parentheses.':''}
+Output ONLY valid JSON:
+{"verb":"","meaning":"English meaning","tense":"","forms":[{"pronoun":"","form":"","romanisation":""}],"notes":"irregularities or special notes"}
+Include all persons/numbers for ${lang}. For languages without grammatical persons, adapt appropriately.`;
+    const r=await ask([{role:'user',content:`Conjugate the ${lang} verb "${verb}" in the ${tense} tense.`}],sys,800);
+    try{setOutput(JSON.parse(r.replace(/```json|```/g,'').trim()));}
+    catch{setOutput({verb,meaning:'',tense,forms:[],notes:r});}
+    setBusy(false);
+  }
+
+  async function mineSentences(){
+    setBusySent(true);setSentences([]);setShowTl({});
+    const sys=`You are a ${lang} language teacher. Level: ${level}.${cfg.rom?' Include romanisation in parentheses.':''}
+Output ONLY valid JSON:
+[{"sentence":"${lang} sentence","translation":"English","note":"grammar or usage note"}]`;
+    const r=await ask([{role:'user',content:`Generate 6 natural ${lang} sentences using the verb "${verb}" in different tenses and contexts.`}],sys,1000);
+    try{setSentences(JSON.parse(r.replace(/```json|```/g,'').trim()));}
+    catch{setSentences([{sentence:r,translation:'',note:''}]);}
+    setBusySent(false);
+  }
+
+  return(
+    <div className="sec">
+      <div className="card">
+        <h3>Verb Conjugation & Sentence Mining</h3>
+        <div className="row">
+          <input className="inp" style={{flex:1}} value={verb} onChange={e=>setVerb(e.target.value)}
+            onKeyDown={e=>{if(e.key==='Enter')conjugate();}}
+            placeholder={`Enter a ${lang} verb…`}/>
+          <select className="inp" style={{flex:1}} value={tense} onChange={e=>setTense(e.target.value)}>
+            {tenses.map(t=><option key={t} value={t}>{t}</option>)}
+          </select>
+          <button className="btn btn-gd" onClick={conjugate} disabled={busy||!verb.trim()}>
+            {busy?<span className="spin"/>:'Conjugate'}
+          </button>
+        </div>
+      </div>
+
+      {output&&(
+        <div className="card">
+          <h3>{output.verb} <span style={{color:'var(--cr3)',fontSize:'.8rem',fontWeight:400}}>— {output.meaning}</span></h3>
+          <div style={{fontSize:'.76rem',color:'var(--gd)',fontFamily:"'DM Mono',monospace",marginBottom:9}}>{output.tense}</div>
+          {output.forms?.length>0&&(
+            <table className="conj-table">
+              <thead><tr><th>Person</th><th>Form</th>{cfg.rom&&<th>Romanisation</th>}</tr></thead>
+              <tbody>{output.forms.map((f,i)=>(
+                <tr key={i}>
+                  <td style={{color:'var(--cr3)'}}>{f.pronoun}</td>
+                  <td className="tgt">{f.form}</td>
+                  {cfg.rom&&<td style={{fontFamily:"'DM Mono',monospace",fontSize:'.78rem',color:'var(--cr4)'}}>{f.romanisation}</td>}
+                </tr>
+              ))}</tbody>
+            </table>
+          )}
+          {output.notes&&<p className="note" style={{marginTop:9,color:'var(--gd2)'}}>{output.notes}</p>}
+          <div className="row" style={{marginTop:11}}>
+            <button className="btn btn-gh btn-sm" onClick={mineSentences} disabled={busySent}>
+              {busySent?<><span className="spin"/> Loading…</>:'⛏ Mine sentences'}
+            </button>
+            <button className="save-btn" onClick={()=>onSave({target:output.verb,meaning:output.meaning,context:`${output.tense}: ${output.forms?.map(f=>f.form).join(', ')}`,lang})}>＋ Save to Bank</button>
+          </div>
+        </div>
+      )}
+
+      {sentences.length>0&&(
+        <div className="card">
+          <h3>Example Sentences — "{verb}"</h3>
+          {sentences.map((s,i)=>(
+            <div key={i} className="mine-card">
+              <div className="mine-sent">{s.sentence}</div>
+              <div className="mine-tl" style={{filter:showTl[i]?'none':'blur(3px)'}} onClick={()=>setShowTl(t=>({...t,[i]:!t[i]}))}>
+                {showTl[i]?s.translation:'▪ click to reveal ▪'}
+              </div>
+              {s.note&&<div className="mine-note">{s.note}</div>}
+              <button className="save-btn" onClick={()=>onSave({target:s.sentence,meaning:s.translation,context:verb,lang})}>＋ Save</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── SENTENCE MINING TAB ──────────────────────────────────────────────
+function MineTab({lang,level,onSave}){
+  const cfg=LANGS[lang];
+  const [mode,setMode]=useState('words');
+  const [inp,setInp]=useState('');
+  const [count,setCount]=useState('8');
+  const [results,setResults]=useState([]);
+  const [busy,setBusy]=useState(false);
+  const [showTl,setShowTl]=useState({});
+
+  async function mine(){
+    setBusy(true);setResults([]);setShowTl({});
+    const sys=`You are a ${lang} language teacher. Level: ${level}.${cfg.rom?' Include romanisation in parentheses.':''}
+Output ONLY valid JSON:
+[{"target":"${lang} sentence","translation":"English","note":"grammar or usage tip"}]
+Generate ${count} natural, useful items. Cover varied structures. Level: ${level}.`;
+    const prompt=mode==='words'?`Create natural ${lang} sentences using these: ${inp}`
+      :mode==='phrases'?`Generate common ${lang} phrases/expressions about: ${inp}`
+      :mode==='questions'?`Create ${lang} question-and-answer pairs about: ${inp}`
+      :`Generate ${lang} sentences from this topic: ${inp}`;
+    const r=await ask([{role:'user',content:prompt}],sys,1200);
+    try{setResults(JSON.parse(r.replace(/```json|```/g,'').trim()));}
+    catch{setResults([{target:r,translation:'',note:''}]);}
+    setBusy(false);
+  }
+
+  return(
+    <div className="sec">
+      <div className="card">
+        <h3>Sentence Mining</h3>
+        <div className="tgl-row" style={{marginBottom:9}}>
+          {[['words','Word list'],['phrases','Phrases'],['questions','Q&A'],['story','Topic/Story']].map(([v,l])=>(
+            <button key={v} className={`tgl${mode===v?' on':''}`} onClick={()=>setMode(v)}>{l}</button>
+          ))}
+        </div>
+        <textarea className="inp" value={inp} onChange={e=>setInp(e.target.value)} style={{minHeight:72}}
+          placeholder={mode==='words'?'Words/phrases separated by commas…':mode==='phrases'?'Topic or situation…':mode==='questions'?'Topic for Q&A practice…':'Paste a story, topic, or paragraph…'}/>
+        <div className="row" style={{marginTop:9}}>
+          <select className="inp" style={{width:100,flex:'none'}} value={count} onChange={e=>setCount(e.target.value)}>
+            {['5','8','10','15'].map(n=><option key={n} value={n}>{n} items</option>)}
+          </select>
+          <button className="btn btn-gd" onClick={mine} disabled={busy||!inp.trim()}>
+            {busy?<><span className="spin"/> Mining…</>:'⛏ Mine'}
+          </button>
+        </div>
+      </div>
+      {results.length>0&&(
+        <div className="col">
+          {results.map((r,i)=>(
+            <div key={i} className="mine-card">
+              <div className="mine-sent">{r.target}</div>
+              <div className="mine-tl" style={{filter:showTl[i]?'none':'blur(3px)',cursor:'pointer'}} onClick={()=>setShowTl(t=>({...t,[i]:!t[i]}))}>
+                {showTl[i]?r.translation:'▪ click to reveal ▪'}
+              </div>
+              {r.note&&<div className="mine-note">{r.note}</div>}
+              <button className="save-btn" onClick={()=>onSave({target:r.target,meaning:r.translation,context:r.note||'',lang})}>＋ Save</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── LISTENING TAB ────────────────────────────────────────────────────
+function ListeningTab({lang,level,onSave}){
+  const cfg=LANGS[lang];
+  const [script,setScript]=useState('');
+  const [segs,setSegs]=useState(null);
+  const [busy,setBusy]=useState(false);
+  const [showTl,setShowTl]=useState({});
+  const [notes,setNotes]=useState(null);
+  const [busyN,setBusyN]=useState(false);
+  const [q,setQ]=useState('');
+  const [ans,setAns]=useState(null);
+  const [busyQ,setBusyQ]=useState(false);
+
+  async function process(){
+    if(!script.trim())return;
+    setBusy(true);setSegs(null);setNotes(null);setShowTl({});
+    const sys=`You are a ${lang} language teacher. Level: ${level}.${cfg.rom?' Include romanisation in parentheses.':''}
+Break this ${lang} script into natural segments (1–3 sentences each).
+Output ONLY valid JSON:
+[{"original":"${lang} text","translation":"English translation","romanisation":"if applicable else empty string"}]`;
+    const r=await ask([{role:'user',content:script}],sys,2000);
+    try{setSegs(JSON.parse(r.replace(/```json|```/g,'').trim()));}
+    catch{setSegs([{original:script,translation:'',romanisation:''}]);}
+    setBusy(false);
+  }
+
+  async function analyse(){
+    setBusyN(true);
+    const sys=`You are a ${lang} language teacher. Level: ${level}.
+Analyse this ${lang} script and provide:
+1. Key vocabulary (5–8 items worth noting with translations)
+2. Notable grammar structures
+3. Cultural or contextual notes
+4. 3 comprehension questions (in ${lang})`;
+    const r=await ask([{role:'user',content:`Script: ${script}`}],sys,1200);
+    setNotes(r);setBusyN(false);
+  }
+
+  async function askQ(){
+    if(!q.trim())return;
+    setBusyQ(true);setAns(null);
+    const r=await ask([{role:'user',content:`Script: "${script}"\n\nQuestion: ${q}`}],
+      `You are a ${lang} language teacher helping a ${level} learner understand a script. Answer clearly in English.`,800);
+    setAns(r);setBusyQ(false);
+  }
+
+  function speak(text){
+    if(!cfg.code||!window.speechSynthesis)return;
+    window.speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(text);u.lang=cfg.code;u.rate=0.85;
+    window.speechSynthesis.speak(u);
+  }
+
+  return(
+    <div className="sec">
+      <div className="card">
+        <h3>Listening & Script Study</h3>
+        <p className="note" style={{marginBottom:9}}>Paste a script from a TED talk, podcast, film, or YouTube video. The app segments it, translates it, and lets you analyse the language.</p>
+        <textarea className="inp" value={script} onChange={e=>setScript(e.target.value)} style={{minHeight:100}} placeholder={`Paste your ${lang} script here…`}/>
+        <div className="row" style={{marginTop:9}}>
+          <button className="btn btn-gd" onClick={process} disabled={busy||!script.trim()}>
+            {busy?<><span className="spin"/> Processing…</>:'Process Script'}
+          </button>
+          <button className="btn btn-bl" onClick={analyse} disabled={busyN||!script.trim()}>
+            {busyN?<><span className="spin"/> Analysing…</>:'📊 Analyse Language'}
+          </button>
+        </div>
+      </div>
+
+      {segs&&segs.length>0&&(
+        <div className="card">
+          <h3>Script — {segs.length} segments</h3>
+          {segs.map((seg,i)=>(
+            <div key={i} className="seg">
+              <div style={{display:'flex',gap:8,alignItems:'flex-start'}}>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:'.88rem',color:'var(--cr)',lineHeight:1.58}}>{seg.original}</div>
+                  {cfg.rom&&seg.romanisation&&<div style={{fontSize:'.74rem',color:'var(--cr4)',fontFamily:"'DM Mono',monospace",marginTop:2}}>{seg.romanisation}</div>}
+                  <div className={`seg-tl${showTl[i]?'':' blur'}`} onClick={()=>setShowTl(t=>({...t,[i]:!t[i]}))}>
+                    {showTl[i]?seg.translation:'▪ click to reveal ▪'}
+                  </div>
+                </div>
+                <div style={{display:'flex',flexDirection:'column',gap:4,flexShrink:0}}>
+                  {cfg.code&&<button className="btn btn-gh btn-sm" style={{padding:'2px 7px'}} onClick={()=>speak(seg.original)}>🔊</button>}
+                  <button className="save-btn" onClick={()=>onSave({target:seg.original,meaning:seg.translation,context:'Listening script',lang})}>＋</button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {notes&&<div className="fb bl">{notes}</div>}
+
+      {segs&&(
+        <div className="card">
+          <h4>Ask about the script</h4>
+          <div className="row">
+            <input className="inp" style={{flex:1}} value={q} onChange={e=>setQ(e.target.value)}
+              onKeyDown={e=>{if(e.key==='Enter')askQ();}}
+              placeholder="What does this phrase mean? Why is this tense used?…"/>
+            <button className="btn btn-gd btn-sm" onClick={askQ} disabled={busyQ||!q.trim()}>Ask</button>
+          </div>
+          {ans&&<div className="fb" style={{marginTop:9}}>{ans}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── SHADOWING TAB ────────────────────────────────────────────────────
+function ShadowingTab({lang,level,addStat}){
+  const cfg=LANGS[lang];
+  const [text,setText]=useState('');
+  const [loading,setLoading]=useState(false);
+  const [rec,setRec]=useState(false);
+  const [transcript,setTranscript]=useState('');
+  const [feedback,setFeedback]=useState(null);
+  const [busy,setBusy]=useState(false);
+  const [speed,setSpeed]=useState('0.85');
+  const recRef=useRef(null);
+
+  const PROMPTS=['a weather forecast','a restaurant announcement','a phone voicemail','a short news headline with context','a short story paragraph','directions in a city'];
+
+  async function loadPassage(prompt){
+    setLoading(true);setFeedback(null);setTranscript('');
+    const r=await ask(
+      [{role:'user',content:`Write a short ${lang} passage (4–6 sentences, ${level} level) for shadowing practice. Theme: ${prompt}.${cfg.rom?' Include romanisation in parentheses.':''} Output the passage only.`}],
+      `You are a ${lang} language teacher. Write natural spoken-register text only.`,500
+    );
+    setText(r.startsWith('⚠')?'':r.trim());setLoading(false);
+  }
+
+  function speak(){
+    if(!cfg.code||!window.speechSynthesis||!text)return;
+    window.speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(text);u.lang=cfg.code;u.rate=parseFloat(speed);
+    window.speechSynthesis.speak(u);
+  }
+
+  function startRec(){
+    if(!cfg.code){alert('Speech recognition unavailable for '+lang+'. Type your attempt below.');return;}
+    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    if(!SR){alert('Chrome required.');return;}
+    const r=new SR();r.lang=cfg.code;r.continuous=true;r.interimResults=false;
+    let pts=[];
+    r.onresult=e=>pts.push(e.results[e.results.length-1][0].transcript);
+    r.onend=()=>{setRec(false);setTranscript(pts.join(' '));};
+    recRef.current=r;r.start();setRec(true);setFeedback(null);
+  }
+
+  async function getFeedback(){
+    setBusy(true);
+    const sys=`You are an expert ${lang} accent and pronunciation coach. Level: ${level}.
+Pronunciation notes: ${cfg.pron}
+Target text: "${text}"
+Learner produced: "${transcript||'(unclear)'}"
+Provide:
+1. Accuracy compared to target
+2. Specific pronunciation points to improve (relevant to ${lang})
+3. Intonation and rhythm feedback
+4. Accent reduction tips
+5. Score out of 10 with brief justification`;
+    const r=await ask([{role:'user',content:'Analyse my shadowing attempt.'}],sys,1000);
+    setFeedback(r);addStat('voiceSessions');setBusy(false);
+  }
+
+  return(
+    <div className="sec">
+      <div className="card">
+        <h3>Shadowing & Accent Practice</h3>
+        <p className="note" style={{marginBottom:9}}>Listen to a passage, shadow along with it (speak simultaneously), record yourself, and get accent feedback.</p>
+        <div className="chips" style={{marginBottom:9}}>
+          {PROMPTS.map(p=><button key={p} className="chip" onClick={()=>loadPassage(p)} disabled={loading}>{loading?'…':p}</button>)}
+        </div>
+        {text&&<div className="phrase-box" style={{textAlign:'left',lineHeight:1.7,marginBottom:11}}>{text}</div>}
+        <div className="row">
+          <select className="inp" style={{width:120,flex:'none'}} value={speed} onChange={e=>setSpeed(e.target.value)}>
+            <option value="0.6">Slow (0.6×)</option>
+            <option value="0.75">0.75×</option>
+            <option value="0.85">Normal (0.85×)</option>
+            <option value="1.0">Fast (1×)</option>
+          </select>
+          <button className="btn btn-gh btn-sm" onClick={speak} disabled={!cfg.code||!text}>🔊 Play</button>
+          <button className="btn btn-gh btn-sm" onClick={()=>window.speechSynthesis?.cancel()}>⏹ Stop</button>
+        </div>
+        {!cfg.code&&<p className="note" style={{marginTop:7,color:'var(--rs3)'}}>TTS unavailable for {lang}. Use an external source and shadow along.</p>}
+      </div>
+      <div className="card">
+        <h3>Record Your Shadowing</h3>
+        <button className={`mic-btn${rec?' on':''}`} onClick={rec?()=>recRef.current?.stop():startRec}>{rec?'⏹':'🎙️'}</button>
+        <p className="note" style={{textAlign:'center',marginTop:7}}>{rec?'Recording… tap to stop':'Tap to record yourself'}</p>
+        <textarea className="inp" style={{marginTop:11,minHeight:52}} value={transcript} onChange={e=>setTranscript(e.target.value)} placeholder="Transcript appears here, or type what you said…"/>
+        <button className="btn btn-gd" style={{marginTop:9}} onClick={getFeedback} disabled={busy||!transcript.trim()||!text}>
+          {busy?<><span className="spin"/> Analysing…</>:'Get Accent Feedback'}
+        </button>
+      </div>
+      {feedback&&<div className="fb pu">{feedback}</div>}
+    </div>
+  );
+}
+
+// ─── QUESTIONS TAB ────────────────────────────────────────────────────
+function QuestionsTab({lang,level}){
+  const cfg=LANGS[lang];
+  const [inp,setInp]=useState('');
+  const [qtype,setQtype]=useState('all');
+  const [qs,setQs]=useState([]);
+  const [busy,setBusy]=useState(false);
+
+  async function generate(){
+    setBusy(true);setQs([]);
+    const sys=`You are a ${lang} language teacher. Level: ${level}.${cfg.rom?' Questions should include romanisation in parentheses.':''}
+Generate 6–8 practice questions. Type: ${qtype}.
+Output ONLY valid JSON:
+[{"num":1,"question":"question in ${lang}","hint":"optional English grammar or vocabulary note"}]`;
+    const r=await ask([{role:'user',content:`Topic/text: ${inp}`}],sys,900);
+    try{const p=JSON.parse(r.replace(/```json|```/g,'').trim());setQs(Array.isArray(p)?p:[]);}
+    catch{setQs([{num:1,question:r,hint:''}]);}
+    setBusy(false);
+  }
+
+  return(
+    <div className="sec">
+      <div className="card">
+        <h3>Generate Practice Questions</h3>
+        <textarea className="inp" value={inp} onChange={e=>setInp(e.target.value)} style={{minHeight:88}} placeholder="Paste a topic, conversation, paragraph, or scenario…"/>
+        <div className="row" style={{marginTop:9}}>
+          <select className="inp" style={{flex:1}} value={qtype} onChange={e=>setQtype(e.target.value)}>
+            {[['comprehension','Comprehension'],['vocab','Vocabulary'],['grammar','Grammar'],['speaking','Speaking prompts'],['all','Mixed']].map(([v,l])=><option key={v} value={v}>{l}</option>)}
+          </select>
+          <button className="btn btn-gd" onClick={generate} disabled={busy||!inp.trim()}>
+            {busy?<><span className="spin"/> Working…</>:'Generate'}
+          </button>
+        </div>
+      </div>
+      {qs.length>0&&(
+        <div className="col">
+          {qs.map((q,i)=>(
+            <div key={i} className="card2">
+              <div style={{fontSize:'.67rem',color:'var(--gd)',fontFamily:"'DM Mono',monospace",marginBottom:4}}>Q{q.num}</div>
+              <div style={{fontSize:'.88rem',color:'var(--cr)',lineHeight:1.55}}>{q.question}</div>
+              {q.hint&&<div style={{fontSize:'.75rem',color:'var(--cr4)',fontStyle:'italic',marginTop:4}}>💡 {q.hint}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── PROGRESS TAB ─────────────────────────────────────────────────────
+function ProgressTab({lang,level,stats,bank}){
+  const key=`${lang}::${level}`;
+  const ls=stats.perKey?.[key]||{chatMsgs:0,corrections:0,voiceSessions:0,scenesCompleted:0,grammarTopics:0};
+  const forLang=bank.filter(w=>w.lang===lang);
+  const due=forLang.filter(isDue);
+  const reviewed=forLang.length-due.length;
+  const allDue=bank.filter(isDue);
+
+  return(
+    <div className="sec">
+      <div className="card">
+        <h3>{LANGS[lang].flag} {lang} · {level}</h3>
+        <p className="note" style={{marginBottom:11}}>Stats track separately per language and level. Streak counts consecutive days the app was used.</p>
+        <div className="stat-g">
+          {[[ls.chatMsgs,'Messages sent'],[ls.corrections,'Corrections'],[ls.voiceSessions,'Voice sessions'],[ls.scenesCompleted,'Scenes done'],[ls.grammarTopics,'Grammar topics'],[forLang.length,'Words saved'],[due.length,'Due for review'],[stats.streak||0,'Day streak 🔥']].map(([n,l])=>(
+            <div key={l} className="stat-box"><div className="stat-n">{n}</div><div className="stat-l">{l}</div></div>
+          ))}
+        </div>
+      </div>
+      {forLang.length>0&&(
+        <div className="card">
+          <h4>Word Bank — {lang} · {level}</h4>
+          <div className="col" style={{gap:5}}>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:'.76rem',color:'var(--cr4)'}}><span>SRS progress</span><span>{reviewed} / {forLang.length}</span></div>
+            <div className="pb-wrap"><div className="pb" style={{width:forLang.length>0?`${(reviewed/forLang.length)*100}%`:'0%'}}/></div>
+            {due.length>0&&<p className="note" style={{color:'var(--gd2)'}}>🔁 {due.length} word{due.length>1?'s':''} ready for review.</p>}
+          </div>
+        </div>
+      )}
+      <div className="card">
+        <h4>All Languages</h4>
+        {bank.length===0?<p className="note">No words saved yet.</p>:(
+          <div className="col" style={{gap:6}}>
+            {LANG_NAMES.map(l=>{const n=bank.filter(w=>w.lang===l).length;const d=bank.filter(w=>w.lang===l&&isDue(w)).length;return n>0?(
+              <div key={l} style={{display:'flex',alignItems:'center',gap:9}}>
+                <span>{LANGS[l].flag}</span>
+                <span style={{flex:1,fontSize:'.83rem',color:'var(--cr2)'}}>{l}</span>
+                <span style={{fontFamily:"'DM Mono',monospace",fontSize:'.76rem',color:'var(--gd)'}}>{n} words</span>
+                {d>0&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:'.68rem',color:'var(--rs3)'}}>{d} due</span>}
+              </div>
+            ):null;}).filter(Boolean)}
+          </div>
+        )}
+      </div>
+      {allDue.length>0&&<div className="card" style={{borderLeftColor:'var(--gd)',borderLeftWidth:3}}><p className="note" style={{color:'var(--gd2)'}}>📚 {allDue.length} word{allDue.length>1?'s':''} due across all languages.</p></div>}
+    </div>
+  );
+}
+
+// ─── ACCOUNTABILITY TAB ───────────────────────────────────────────────
+function TodayTab({lang,level,stats,setStats,bank}){
+  const today=new Date().toDateString();
+  const todayKey=`ci_${today}`;
+  const [checked,setChecked]=useState(()=>S.get(todayKey,{}));
+  const [refl,setRefl]=useState('');
+  const [coach,setCoach]=useState('');
+  const [busy,setBusy]=useState(false);
+
+  const TASKS=[
+    {id:'chat',label:'Chat practice (written conversation)',icon:'💬'},
+    {id:'voice',label:'Voice / pronunciation practice',icon:'🎙️'},
+    {id:'shadow',label:'Shadowing / accent exercise',icon:'🔄'},
+    {id:'scene',label:'Daily scene description',icon:'🖼️'},
+    {id:'grammar',label:'Grammar study (one topic)',icon:'📖'},
+    {id:'review',label:'Word bank SRS review',icon:'🔁'},
+    {id:'listen',label:'Listening & script study',icon:'🎧'},
+    {id:'verb',label:'Verb conjugation & sentence mining',icon:'⛏'},
+    {id:'mine',label:'Freestyle sentence mining',icon:'🗂'},
+    {id:'convo',label:'Build / study a conversation',icon:'📜'},
+    {id:'roleplay',label:'Role-play practice',icon:'🎭'},
+  ];
+
+  const weekData=useMemo(()=>{
+    const days=[];
+    for(let i=6;i>=0;i--){
+      const d=new Date();d.setDate(d.getDate()-i);
+      const data=S.get(`ci_${d.toDateString()}`,{});
+      days.push({label:d.toLocaleDateString('en',{weekday:'short'}),count:Object.values(data).filter(Boolean).length});
+    }
+    return days;
+  },[]);
+
+  function toggle(id){
+    const n={...checked,[id]:!checked[id]};
+    setChecked(n);S.set(todayKey,n);
+    // Update streak
+    const count=Object.values(n).filter(Boolean).length;
+    if(count>0){
+      setStats(s=>{
+        let streak=s.streak||0;
+        if(s.lastSession!==today){
+          const yest=new Date();yest.setDate(yest.getDate()-1);
+          streak=s.lastSession===yest.toDateString()?streak+1:1;
+        }
+        return{...s,streak,lastSession:today};
+      });
+    }
+  }
+
+  async function getCoach(){
+    setBusy(true);
+    const done=TASKS.filter(t=>checked[t.id]).map(t=>t.label).join(', ')||'none yet';
+    const r=await ask(
+      [{role:'user',content:`I'm learning ${lang} at ${level} level. Today I completed: ${done}. My reflection: "${refl}". Give me a short, warm, encouraging response (3–4 sentences) with one specific tip for tomorrow.`}],
+      'You are a warm, encouraging language learning coach. Be specific and motivating.',600
+    );
+    setCoach(r);setBusy(false);
+  }
+
+  const done=Object.values(checked).filter(Boolean).length;
+  const pct=Math.round((done/TASKS.length)*100);
+
+  return(
+    <div className="sec">
+      <div className="card">
+        <h3>Today — {lang} · {level}</h3>
+        <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:13}}>
+          <div>
+            <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:'2.2rem',color:pct===100?'var(--gn2)':'var(--gd2)',lineHeight:1}}>{pct}%</div>
+            <div style={{fontSize:'.7rem',color:'var(--cr4)'}}>{done}/{TASKS.length} tasks · {new Date().toLocaleDateString('en',{weekday:'long',month:'short',day:'numeric'})}</div>
+          </div>
+          <div style={{flex:1}}>
+            <div className="pb-wrap"><div className="pb" style={{width:`${pct}%`,background:pct===100?'linear-gradient(90deg,var(--gn),var(--gn2))':undefined}}/></div>
+            {(stats.streak||0)>0&&<div style={{fontSize:'.74rem',color:'var(--gd3)',marginTop:5}}>🔥 {stats.streak} day streak</div>}
+          </div>
+        </div>
+        <div className="col" style={{gap:6}}>
+          {TASKS.map(t=>(
+            <div key={t.id} className={`ci-item${checked[t.id]?' done':''}`} onClick={()=>toggle(t.id)}>
+              <div className="ci-check">{checked[t.id]?'✓':''}</div>
+              <div className="ci-label">{t.icon} {t.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="card">
+        <h4>7-Day Activity</h4>
+        <div style={{display:'flex',gap:6,alignItems:'flex-end',height:60}}>
+          {weekData.map((d,i)=>(
+            <div key={i} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:4}}>
+              <div style={{width:'100%',background:d.count>0?'var(--gd)':'var(--s4)',borderRadius:4,height:`${Math.max(4,d.count/TASKS.length*52)}px`,transition:'height .3s'}}/>
+              <div style={{fontSize:'.62rem',color:'var(--cr4)',fontFamily:"'DM Mono',monospace"}}>{d.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="card">
+        <h4>Today's Reflection</h4>
+        <textarea className="inp" value={refl} onChange={e=>setRefl(e.target.value)} style={{minHeight:70}} placeholder="What went well? What was difficult? What will you focus on tomorrow?…"/>
+        <button className="btn btn-gd btn-sm" style={{marginTop:8}} onClick={getCoach} disabled={busy||!refl.trim()}>
+          {busy?<><span className="spin"/> Thinking…</>:'Get coach feedback'}
+        </button>
+        {coach&&<div className="fb tl" style={{marginTop:9}}>{coach}</div>}
+      </div>
+    </div>
+  );
+}
+
+// ─── ROOT APP ─────────────────────────────────────────────────────────
+const TABS=[
+  {id:'today',    icon:'✅', label:'Today'},
+  {id:'chat',     icon:'💬', label:'Chat'},
+  {id:'voice',    icon:'🎙️', label:'Voice'},
+  {id:'roleplay', icon:'🎭', label:'Role-Play'},
+  {id:'scene',    icon:'🖼️', label:'Scene'},
+  {id:'convo',    icon:'📜', label:'Conversations'},
+  {id:'grammar',  icon:'📖', label:'Grammar'},
+  {id:'verbs',    icon:'⛏',  label:'Verbs'},
+  {id:'mine',     icon:'🗂',  label:'Mine'},
+  {id:'listen',   icon:'🎧', label:'Listening'},
+  {id:'shadow',   icon:'🔄', label:'Shadowing'},
+  {id:'wordbank', icon:'🃏', label:'Word Bank'},
+  {id:'questions',icon:'❓', label:'Questions'},
+  {id:'progress', icon:'📊', label:'Progress'},
+];
+
+const DEF_STATS={perKey:{},streak:0,lastSession:null};
+
+function App(){
+  const [tab,setTab]=useState('today');
+  const [lang,setLang]=useState(()=>S.get('cv_lang','Italian'));
+  const [level,setLevel]=useState(()=>S.get('cv_level','B1'));
+  const [showLM,setShowLM]=useState(false);
+  const [bank,setRawBank]=useState(()=>S.get('cv_bank',[]));
+  const [convos,setRawConvos]=useState(()=>S.get('cv_convos',[]));
+  const [stats,setRawStats]=useState(()=>S.get('cv_stats',DEF_STATS));
+
+  const setBank=useCallback(fn=>{setRawBank(b=>{const n=typeof fn==='function'?fn(b):fn;S.set('cv_bank',n);return n;});},[]);
+  const setConvos=useCallback(fn=>{setRawConvos(b=>{const n=typeof fn==='function'?fn(b):fn;S.set('cv_convos',n);return n;});},[]);
+  const setStats=useCallback(fn=>{setRawStats(b=>{const n=typeof fn==='function'?fn(b):fn;S.set('cv_stats',n);return n;});},[]);
+
+  function addStat(key){
+    const sk=`${lang}::${level}`;
+    setStats(s=>{
+      const cur=s.perKey?.[sk]||{chatMsgs:0,corrections:0,voiceSessions:0,scenesCompleted:0,grammarTopics:0};
+      const today=new Date().toDateString();
+      let streak=s.streak||0;
+      if(s.lastSession!==today){
+        const yest=new Date();yest.setDate(yest.getDate()-1);
+        streak=s.lastSession===yest.toDateString()?streak+1:1;
+      }
+      return{...s,perKey:{...s.perKey,[sk]:{...cur,[key]:(cur[key]||0)+1}},lastSession:today,streak};
+    });
+  }
+
+  function onSaveWord(w){setBank(b=>[{id:Date.now(),...w,reps:0,interval:1,ef:2.5,nextReview:null},...b]);}
+  function saveLang(l,lv){setLang(l);setLevel(lv);S.set('cv_lang',l);S.set('cv_level',lv);setShowLM(false);}
+
+  const cfg=LANGS[lang]||LANGS.Italian;
+  const due=bank.filter(w=>w.lang===lang&&isDue(w));
+
+  return(
+    <>
+      <style>{CSS}</style>
+      <div className="app">
+        <header className="hdr">
+          <div><div className="logo">Conversazioni</div><div className="logo-sub">language through conversation</div></div>
+          <div className="hdr-r">
+            {due.length>0&&<span className="badge" style={{color:'var(--rs3)',borderColor:'var(--rs)'}}>🔁{due.length}</span>}
+            {(stats.streak||0)>0&&<span className="badge" style={{color:'var(--gd3)'}}>🔥{stats.streak}</span>}
+            <button className="lang-pill" onClick={()=>setShowLM(true)}>
+              <span>{cfg.flag}</span>{lang}
+              <span style={{fontFamily:"'DM Mono',monospace",fontSize:'.7rem',opacity:.7}}>{level}</span>
+            </button>
+          </div>
+        </header>
+        <nav className="tabs">
+          {TABS.map(t=>(
+            <button key={t.id} className={`tb${tab===t.id?' on':''}`} onClick={()=>setTab(t.id)}>
+              {t.icon} {t.label}
+              {t.id==='wordbank'&&due.length>0&&<span className="notif">{due.length}</span>}
+            </button>
+          ))}
+        </nav>
+        <div className="content">
+          {tab==='today'    &&<TodayTab       key={lang+level} lang={lang} level={level} stats={stats} setStats={setStats} bank={bank}/>}
+          {tab==='chat'     &&<ChatTab        key={lang+level} lang={lang} level={level} onSave={onSaveWord} addStat={addStat}/>}
+          {tab==='voice'    &&<VoiceTab       key={lang+level} lang={lang} level={level} onSave={onSaveWord} addStat={addStat}/>}
+          {tab==='roleplay' &&<RolePlayTab    key={lang+level} lang={lang} level={level} addStat={addStat}/>}
+          {tab==='scene'    &&<SceneTab       key={lang+level} lang={lang} level={level} addStat={addStat}/>}
+          {tab==='convo'    &&<ConvoTab       key={lang}       lang={lang} level={level} saved={convos} setSaved={setConvos}/>}
+          {tab==='grammar'  &&<GrammarTab     key={lang+level} lang={lang} level={level} addStat={addStat}/>}
+          {tab==='verbs'    &&<VerbTab        key={lang+level} lang={lang} level={level} onSave={onSaveWord}/>}
+          {tab==='mine'     &&<MineTab        key={lang+level} lang={lang} level={level} onSave={onSaveWord}/>}
+          {tab==='listen'   &&<ListeningTab   key={lang+level} lang={lang} level={level} onSave={onSaveWord}/>}
+          {tab==='shadow'   &&<ShadowingTab   key={lang+level} lang={lang} level={level} addStat={addStat}/>}
+          {tab==='wordbank' &&<WordBankTab    key={lang}       lang={lang} bank={bank} setBank={setBank}/>}
+          {tab==='questions'&&<QuestionsTab   key={lang+level} lang={lang} level={level}/>}
+          {tab==='progress' &&<ProgressTab    lang={lang} level={level} stats={stats} bank={bank}/>}
+        </div>
+        {showLM&&<LangModal lang={lang} level={level} onSave={saveLang}/>}
+      </div>
+    </>
+  );
+}
+
+// Expose mountApp — called after key is confirmed
+window.mountApp = function(){
+  try {
+    document.getElementById('setup').style.display = 'none';
+    ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+  } catch(e) {
+    document.getElementById('setup').style.display = 'flex';
+    alert('Error loading app: ' + e.message);
+  }
+};
+</script>
+</body>
+</html>
